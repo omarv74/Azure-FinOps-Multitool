@@ -11,6 +11,22 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 
 ---
 
+## Screenshots
+
+### Overview — Cost Summary & Resources by Spend
+![Overview](screenshots/overview.png)
+
+### Tags — Inventory & CAF Compliance
+![Tags](screenshots/tags.png)
+
+### Optimization — AHB, RI, Savings Plans, Advisor
+![Optimization](screenshots/optimization.png)
+
+### FinOps Guidance — Maturity Assessment
+![FinOps Guidance](screenshots/finops-guidance.png)
+
+---
+
 ## What It Does
 
 | Area                | Data Source                       | What You See                                              |
