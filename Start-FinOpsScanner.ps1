@@ -331,6 +331,26 @@ function Populate-TagsTab {
 function Populate-OptimizationTab {
     $d = $script:scanData
 
+    # Build a resource cost lookup from scanned resource costs (keyed by lowercase resource name)
+    $resCostMap = @{}
+    if ($d.ResourceCosts) {
+        foreach ($rc in $d.ResourceCosts) {
+            $key = ''
+            if ($rc.ResourcePath) {
+                $key = $rc.ResourcePath.ToLower()
+            }
+            $nameKey = ''
+            if ($rc.ResourcePath -match '/([^/]+)$') { $nameKey = $Matches[1].ToLower() }
+            if ($key) { $resCostMap[$key] = $rc }
+            if ($nameKey -and -not $resCostMap.ContainsKey($nameKey)) { $resCostMap[$nameKey] = $rc }
+        }
+    }
+
+    # Currency helper
+    $currency = if ($d.ResourceCosts -and $d.ResourceCosts.Count -gt 0) {
+        Get-CurrencySymbol -Code $d.ResourceCosts[0].Currency
+    } else { '$' }
+
     # AHB
     if ($d.AHB) {
         $script:AHBCountText.Text   = "$($d.AHB.TotalOpportunities) resources"
@@ -339,36 +359,62 @@ function Populate-OptimizationTab {
 
         $ahbRows = @()
         foreach ($vm in $d.AHB.WindowsVMs) {
+            $rc = $null
+            if ($vm.name) { $rc = $resCostMap[$vm.name.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
+            # AHB saves ~40% on Windows VM licensing component
+            $withSavings = if ($forecast) { [math]::Round($forecast * 0.6, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
-                Type           = 'Windows VM'
-                Name           = $vm.name
-                ResourceGroup  = $vm.resourceGroup
-                Size           = $vm.vmSize
-                CurrentLicense = $vm.currentLicense
-                Location       = $vm.location
+                Type              = 'Windows VM'
+                Name              = $vm.name
+                ResourceGroup     = $vm.resourceGroup
+                Size              = $vm.vmSize
+                CurrentLicense    = $vm.currentLicense
+                Location          = $vm.location
+                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
             }
         }
         foreach ($sql in $d.AHB.SQLVMs) {
+            $rc = $null
+            if ($sql.name) { $rc = $resCostMap[$sql.name.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
+            $withSavings = if ($forecast) { [math]::Round($forecast * 0.45, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
-                Type           = 'SQL VM'
-                Name           = $sql.name
-                ResourceGroup  = $sql.resourceGroup
-                Size           = $sql.sqlEdition
-                CurrentLicense = $sql.currentLicense
-                Location       = $sql.location
+                Type              = 'SQL VM'
+                Name              = $sql.name
+                ResourceGroup     = $sql.resourceGroup
+                Size              = $sql.sqlEdition
+                CurrentLicense    = $sql.currentLicense
+                Location          = $sql.location
+                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
             }
         }
         foreach ($db in $d.AHB.SQLDatabases) {
+            $rc = $null
+            if ($db.name) { $rc = $resCostMap[$db.name.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
+            # AHB saves ~55% on SQL DB licensing component
+            $withSavings = if ($forecast) { [math]::Round($forecast * 0.45, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
-                Type           = 'SQL Database'
-                Name           = $db.name
-                ResourceGroup  = $db.resourceGroup
-                Size           = $db.sku
-                CurrentLicense = $db.currentLicense
-                Location       = $db.location
+                Type              = 'SQL Database'
+                Name              = $db.name
+                ResourceGroup     = $db.resourceGroup
+                Size              = $db.sku
+                CurrentLicense    = $db.currentLicense
+                Location          = $db.location
+                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
             }
         }
-        $script:AHBGrid.ItemsSource = @($ahbRows)
+        if ($ahbRows.Count -eq 0) {
+            $script:AHBGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No AHB-eligible resources found. All resources are using Azure Hybrid Benefit or are not eligible.' })
+        } else {
+            $script:AHBGrid.ItemsSource = @($ahbRows)
+        }
+    } else {
+        $script:AHBGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No AHB-eligible resources found.' })
     }
 
     # Reservations - split RI vs SP
@@ -404,16 +450,19 @@ function Populate-OptimizationTab {
         $rrSavings = ($d.Reservations.ReservationRecommendations | Where-Object { $_.NetSavings } | Measure-Object -Property NetSavings -Sum).Sum
         $riTotalSavings = [math]::Round($riSavings + $rrSavings, 2)
         $script:RICountText.Text = $riTotal.ToString()
-        $script:RISavingsText.Text = "Est. `$$($riTotalSavings.ToString('N2'))/yr"
+        $script:RISavingsText.Text = "Est. $currency$($riTotalSavings.ToString('N2'))/yr"
 
         # SP card
         $spSavings = ($spRecs | Where-Object { $_.AnnualSavings } | Measure-Object -Property AnnualSavings -Sum).Sum
         $script:SPCountText.Text = $spRecs.Count.ToString()
-        $script:SPSavingsText.Text = "Est. `$$([math]::Round($spSavings, 2).ToString('N2'))/yr"
+        $script:SPSavingsText.Text = "Est. $currency$([math]::Round($spSavings, 2).ToString('N2'))/yr"
 
         # RI grid - Advisor RI recs + Reservation API recs
         $riRows = @()
         foreach ($rec in $riRecs) {
+            $rc = $null
+            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
             $riRows += [PSCustomObject]@{
                 Subscription     = $rec.Subscription
                 Resource         = $rec.ResourceName
@@ -421,10 +470,11 @@ function Populate-OptimizationTab {
                 Impact           = $rec.Impact
                 Problem          = $rec.Problem
                 Solution         = $rec.Solution
+                Location         = if ($rc) { '-' } else { '-' }
                 Term             = if ($rec.Term) { $rec.Term } else { '-' }
-                'Current Cost'   = if ($rec.AnnualSavings) { "`$$([math]::Round($rec.AnnualSavings * 2, 2).ToString('N2'))/yr (est.)" } else { '-' }
-                'With RI'        = if ($rec.AnnualSavings) { "`$$([math]::Round($rec.AnnualSavings, 2).ToString('N2'))/yr (est.) less" } else { '-' }
-                'Annual Savings' = if ($rec.AnnualSavings) { "`$$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
+                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
+                'With RI'        = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
         foreach ($rr in $d.Reservations.ReservationRecommendations) {
@@ -435,17 +485,25 @@ function Populate-OptimizationTab {
                 Impact           = 'High'
                 Problem          = "$($rr.RecommendedQty) x $($rr.ResourceType) at PAYG rates"
                 Solution         = "Purchase $($rr.RecommendedQty) reserved instance(s) ($($rr.Term))"
+                Location         = '-'
                 Term             = if ($rr.Term) { $rr.Term } else { '-' }
-                'Current Cost'   = if ($rr.CostWithoutRI) { "`$$($rr.CostWithoutRI.ToString('N2'))" } else { '-' }
-                'With RI'        = if ($rr.CostWithRI) { "`$$($rr.CostWithRI.ToString('N2'))" } else { '-' }
-                'Annual Savings' = if ($rr.NetSavings) { "`$$($rr.NetSavings.ToString('N2'))" } else { '-' }
+                'Forecast Cost'  = if ($rr.CostWithoutRI) { "$currency$($rr.CostWithoutRI.ToString('N2'))" } else { '-' }
+                'With RI'        = if ($rr.CostWithRI) { "$currency$($rr.CostWithRI.ToString('N2'))" } else { '-' }
+                'Annual Savings' = if ($rr.NetSavings) { "$currency$($rr.NetSavings.ToString('N2'))" } else { '-' }
             }
         }
-        $script:RIGrid.ItemsSource = @($riRows)
+        if ($riRows.Count -eq 0) {
+            $script:RIGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No Reserved Instance recommendations at this time.' })
+        } else {
+            $script:RIGrid.ItemsSource = @($riRows)
+        }
 
         # SP grid
         $spRows = @()
         foreach ($rec in $spRecs) {
+            $rc = $null
+            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
             $spRows += [PSCustomObject]@{
                 Subscription     = $rec.Subscription
                 Resource         = $rec.ResourceName
@@ -453,36 +511,60 @@ function Populate-OptimizationTab {
                 Impact           = $rec.Impact
                 Problem          = $rec.Problem
                 Solution         = $rec.Solution
+                Location         = if ($rc) { '-' } else { '-' }
                 Term             = if ($rec.Term) { $rec.Term } else { '-' }
-                'Annual Savings' = if ($rec.AnnualSavings) { "`$$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
+                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
+                'With SP'        = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
-        $script:SPGrid.ItemsSource = @($spRows)
+        if ($spRows.Count -eq 0) {
+            $script:SPGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No Savings Plan recommendations at this time.' })
+        } else {
+            $script:SPGrid.ItemsSource = @($spRows)
+        }
+    } else {
+        $script:RIGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No Reserved Instance recommendations at this time.' })
+        $script:SPGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No Savings Plan recommendations at this time.' })
     }
 
     # Advisor
-    if ($d.Optimization) {
+    if ($d.Optimization -and $d.Optimization.TotalCount -gt 0) {
         $script:AdvisorCountText.Text   = $d.Optimization.TotalCount.ToString()
-        $script:AdvisorSavingsText.Text = "Est. `$$($d.Optimization.EstimatedAnnualSavings.ToString('N2'))/yr"
+        $script:AdvisorSavingsText.Text = "Est. $currency$($d.Optimization.EstimatedAnnualSavings.ToString('N2'))/yr"
 
         $advRows = @()
         foreach ($rec in $d.Optimization.Recommendations) {
+            $rc = $null
+            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $forecast = if ($rc) { $rc.Forecast } else { $null }
             $advRows += [PSCustomObject]@{
-                Category      = $rec.Category
-                Subscription  = $rec.Subscription
-                Impact        = $rec.Impact
-                Resource      = $rec.ResourceName
-                Problem       = $rec.Problem
-                Solution      = $rec.Solution
-                'Annual Savings' = if ($rec.AnnualSavings) { "`$$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
+                Category         = $rec.Category
+                Subscription     = $rec.Subscription
+                Impact           = $rec.Impact
+                Resource         = $rec.ResourceName
+                Problem          = $rec.Problem
+                Solution         = $rec.Solution
+                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
+                'With Fix'       = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
         $script:AdvisorGrid.ItemsSource = @($advRows)
+    } else {
+        $script:AdvisorCountText.Text   = '0'
+        $script:AdvisorSavingsText.Text = "$currency" + "0.00/yr"
+        $script:AdvisorGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No Advisor cost optimization recommendations at this time. This is normal for well-optimized or small environments.' })
     }
 }
 
 function Populate-GuidanceTab {
     $d = $script:scanData
+
+    # Currency helper
+    $currency = if ($d.ResourceCosts -and $d.ResourceCosts.Count -gt 0) {
+        Get-CurrencySymbol -Code $d.ResourceCosts[0].Currency
+    } else { '$' }
 
     # -- Understand Pillar ----------------------------------------------
     $understand = @()
@@ -519,12 +601,34 @@ function Populate-GuidanceTab {
             $totalForecast += $entry.Value.Forecast
         }
     }
-    if ($totalActual -gt 0 -and $totalForecast -gt $totalActual * 1.2) {
-        $increase = [math]::Round((($totalForecast - $totalActual) / $totalActual) * 100, 0)
-        $quantify += "[!] Forecast is $increase% above current spend. Review scaling patterns and set up Azure Budgets with alerts."
+
+    # Day-of-month awareness: forecasts are unreliable early in the billing period
+    $dayOfMonth = (Get-Date).Day
+    $daysInMonth = [DateTime]::DaysInMonth((Get-Date).Year, (Get-Date).Month)
+    $pctMonthElapsed = [math]::Round(($dayOfMonth / $daysInMonth) * 100, 0)
+
+    if ($dayOfMonth -le 3) {
+        $quantify += "[INFO] It is day $dayOfMonth of the billing period ($pctMonthElapsed% elapsed). Forecast data is not yet reliable -- check back after day 5 for meaningful trends."
+        if ($totalActual -gt 0) {
+            $projectedMonthly = [math]::Round($totalActual / $dayOfMonth * $daysInMonth, 2)
+            $quantify += "[INFO] Rough projection based on $dayOfMonth day(s) of data: ~$currency$($projectedMonthly.ToString('N2')) for the full month."
+        }
     }
-    elseif ($totalForecast -gt 0) {
-        $quantify += "[OK] Forecast is within 20% of current spend -- costs appear stable this month."
+    elseif ($dayOfMonth -le 7) {
+        $quantify += "[INFO] Early in the billing period (day $dayOfMonth, $pctMonthElapsed% elapsed). Forecast accuracy improves after week 1."
+        if ($totalActual -gt 0 -and $totalForecast -gt $totalActual * 1.2) {
+            $increase = [math]::Round((($totalForecast - $totalActual) / $totalActual) * 100, 0)
+            $quantify += "[!] Forecast is $increase% above current spend, but this is expected early in the month as forecast extrapolates from limited data."
+        }
+    }
+    else {
+        if ($totalActual -gt 0 -and $totalForecast -gt $totalActual * 1.2) {
+            $increase = [math]::Round((($totalForecast - $totalActual) / $totalActual) * 100, 0)
+            $quantify += "[!] Forecast is $increase% above current spend (day $dayOfMonth/$daysInMonth). Review scaling patterns and set up Azure Budgets with alerts."
+        }
+        elseif ($totalForecast -gt 0) {
+            $quantify += "[OK] Forecast is within 20% of current spend -- costs appear stable this month (day $dayOfMonth/$daysInMonth)."
+        }
     }
     $quantify += "[TIP] Set Azure Budgets at the subscription or resource group level to get email/action alerts before overspend."
     $quantify += "[TIP] Use Cost Management Exports to send daily/monthly cost data to a Storage Account for Power BI dashboards."
