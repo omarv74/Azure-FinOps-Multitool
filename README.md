@@ -37,12 +37,12 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 | **Hierarchy**       | Management Groups API             | Full MG tree with subscriptions, costs inline              |
 | **Costs**           | Cost Management API (MG scope)    | Actual month-to-date + forecast per subscription           |
 | **Resource Costs**  | Cost Management API (per sub)     | Per-resource spend with type, RG, forecast, % of total     |
-| **Contract**        | Billing Accounts API              | EA, MCA, PAYGO, or CSP detection                           |
+| **Contract**        | Billing Accounts API + ARM quotaId | EA, MCA, PAYGO, or CSP detection (quotaId fallback)        |
 | **Tags**            | Azure Resource Graph              | Every tag name/value in use, untagged resource count        |
-| **Cost by Tag**     | Cost Management API               | Spend broken down by CostCenter, Environment, etc.         |
+| **Cost by Tag**     | Cost Management API               | Spend broken down by CostCenter, Environment, etc. (auto-fallback to last month) |
 | **AHB**             | Azure Resource Graph              | Windows VMs, SQL VMs, and SQL DBs missing Hybrid Benefit   |
-| **RI / SP**         | Advisor + Reservation Recs API    | Reserved Instance and Savings Plan recommendations (split) |
-| **Advisor**         | Azure Advisor (Cost category)     | Rightsize, shutdown, delete, modernize recommendations     |
+| **RI / SP**         | Advisor + Reservation Recs API    | RI and SP recs with Actual (MTD), Forecast, and savings    |
+| **Advisor**         | Azure Advisor (Cost category)     | Rightsize, shutdown, delete, modernize recs with cost data |
 | **Tag Recs**        | Cloud Adoption Framework baseline | Gap analysis against Microsoft's recommended tag strategy   |
 | **FinOps Guidance** | All of the above                  | Pillar-by-pillar maturity assessment with actionable advice |
 
@@ -89,10 +89,12 @@ cd AzureFinOpsScanner
    stages with a progress bar
 5. When done, browse the tabs:
    - **Overview** — cost summary cards, subscription cost table, top resources by spend
-   - **Cost Analysis** — pick a tag from the dropdown to see spend by tag value
+   - **Cost Analysis** — pick a tag from the dropdown to see spend by tag value (falls back to last month if current month is empty)
    - **Tags** — tag inventory with unique values, coverage %, CAF compliance check
-   - **Optimization** — AHB gaps, RI recs, Savings Plan recs (split), Advisor recs with estimated savings and contract-aware notes
+   - **Optimization** — AHB gaps, RI recs, SP recs, Advisor recs — each with Actual (MTD), Forecast, savings estimate, and annual projection
    - **FinOps Guidance** — pillar-by-pillar assessment with selectable/copyable references
+
+> The Choose Tenant button shows a lock icon: unlocked while choosing, locked once connected.
 6. Click **Export Report** to save as CSV or HTML
 7. Click **Choose Tenant** again any time to switch tenants without restarting
 
@@ -157,6 +159,10 @@ a `DispatcherTimer` so the UI updates between stages.
 | Decision | Why |
 |----------|-----|
 | MG-scope cost queries with per-sub fallback | One call covers all subs; auto-fallback if RBAC blocks MG scope |
+| MonthToDate → TheLastMonth fallback | Cost-by-tag auto-retries with last month if current month has no data (early month) |
+| Column-aware API parsing | Reads column headers from Cost Management responses instead of hardcoded indices |
+| ARM ResourceId cost lookup | Constructs full ARM resource path for cost matching in optimization grids |
+| Lock icon on Choose Tenant | Visual feedback — unlocked while picking, locked once connected |
 | Resource Graph for Advisor | Single cross-tenant query via `advisorresources` table; REST fallback if ARG unavailable |
 | Resource Graph for tags + AHB | Cross-subscription, fast (KQL), paginated |
 | API pagination (nextLink) | Cost Management caps results at ~5000 rows; pagination captures all resources |
@@ -174,6 +180,8 @@ a `DispatcherTimer` so the UI updates between stages.
 | WPF minimize during browser auth | MSAL browser login needs the foreground; scanner minimizes then restores |
 | Tenant picker dialog | WPF ListBox shows all accessible tenants; supports 30+ tenants cleanly |
 | LoginExperienceV2 suppressed | `$env:AZURE_LOGIN_EXPERIENCE_V2=Off` prevents Az.Accounts 12+ console subscription picker |
+| Contract type quotaId fallback | Infers EA/MCA/PAYGO/Internal from ARM subscription quotaId when Billing API is inaccessible |
+| 4-column optimization grids | Each recommendation shows Actual (MTD), Forecast, With-X savings, and Annual Savings |
 
 ---
 
@@ -191,7 +199,8 @@ a `DispatcherTimer` so the UI updates between stages.
 |---------|-------|-----|
 | "Missing required modules" on launch | Az modules not installed | `Install-Module Az.Accounts, Az.Resources, ...` |
 | Cost cards show $0.00 | No Cost Management Reader role | Assign role at MG or subscription scope |
-| Contract type shows dash | No Billing Reader on billing account | Assign Billing Reader (optional) |
+| Contract type shows dash | No Billing Reader and quotaId fallback failed | Assign Billing Reader (optional — quotaId auto-detects most types) |
+| Cost by Tag shows "no data" | April 1st / early month — no MTD data yet | Scanner auto-falls back to last month's data |
 | Tree shows flat list (no MGs) | No Management Group reader access | Assign Reader at tenant root group |
 | Advisor tabs empty | Advisor not enabled or no cost recs | Normal for small/new subscriptions |
 | Forecast shows $0.00 | Forecast not available for account type | Common for MCA in first billing period |

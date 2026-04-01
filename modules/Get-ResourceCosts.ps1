@@ -130,7 +130,13 @@ function Get-ResourceCosts {
             Write-Warning "  Resource cost query failed for $($sub.Name): $($_.Exception.Message)"
         }
 
-        # -- Forecast (remaining month) grouped by resource -------------
+        # -- Forecast: use subscription-level forecast ratio -------------
+        # The forecast API does not reliably support ResourceId grouping,
+        # so we get the sub-level forecast and distribute proportionally.
+        $subTotalActual = 0
+        foreach ($entry in $actualMap.Values) { $subTotalActual += $entry.Actual }
+
+        $subForecast = $subTotalActual  # default: same as actual
         try {
             $now = Get-Date
             $monthEnd = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).AddDays(-1)
@@ -147,10 +153,6 @@ function Get-ResourceCosts {
                     aggregation = @{
                         totalCost = @{ name = 'Cost'; function = 'Sum' }
                     }
-                    grouping = @(
-                        @{ type = 'Dimension'; name = 'ResourceId' }
-                        @{ type = 'Dimension'; name = 'ResourceGroupName' }
-                    )
                 }
                 includeActualCost       = $true
                 includeFreshPartialCost = $false
@@ -160,34 +162,24 @@ function Get-ResourceCosts {
 
             if ($fResp.StatusCode -eq 200) {
                 $fResult = ($fResp.Content | ConvertFrom-Json)
-
-                $fCols = @{}
-                for ($i = 0; $i -lt $fResult.properties.columns.Count; $i++) {
-                    $fCols[$fResult.properties.columns[$i].name] = $i
-                }
-
-                $fPage = $fResult
-                do {
-                    if ($fPage.properties.rows) {
-                        foreach ($row in $fPage.properties.rows) {
-                            $cost       = [math]::Round($row[$fCols['Cost']], 2)
-                            $resourceId = $row[$fCols['ResourceId']]
-
-                            if ($actualMap.ContainsKey($resourceId)) {
-                                $actualMap[$resourceId].Forecast = $actualMap[$resourceId].Actual + $cost
-                            }
-                        }
+                if ($fResult.properties.rows -and $fResult.properties.rows.Count -gt 0) {
+                    $forecastRemaining = 0
+                    foreach ($row in $fResult.properties.rows) {
+                        $forecastRemaining += $row[0]
                     }
-                    if ($fPage.properties.nextLink) {
-                        $uri = [System.Uri]$fPage.properties.nextLink
-                        $nResp = Invoke-AzRestMethod -Path $uri.PathAndQuery -Method GET -ErrorAction Stop
-                        if ($nResp.StatusCode -eq 200) { $fPage = ($nResp.Content | ConvertFrom-Json) }
-                        else { break }
-                    } else { break }
-                } while ($true)
+                    $subForecast = $subTotalActual + [math]::Round($forecastRemaining, 2)
+                }
             }
         } catch {
             # Forecast not available for all account types
+        }
+
+        # Apply forecast ratio proportionally to each resource
+        if ($subTotalActual -gt 0 -and $subForecast -gt $subTotalActual) {
+            $ratio = $subForecast / $subTotalActual
+            foreach ($entry in $actualMap.Values) {
+                $entry.Forecast = [math]::Round($entry.Actual * $ratio, 2)
+            }
         }
 
         # Collect rows from this sub

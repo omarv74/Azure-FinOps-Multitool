@@ -331,19 +331,35 @@ function Populate-TagsTab {
 function Populate-OptimizationTab {
     $d = $script:scanData
 
-    # Build a resource cost lookup from scanned resource costs (keyed by lowercase resource name)
+    # Build resource cost lookups: by full ARM path (lowercase) AND by name (lowercase)
     $resCostMap = @{}
     if ($d.ResourceCosts) {
         foreach ($rc in $d.ResourceCosts) {
-            $key = ''
             if ($rc.ResourcePath) {
-                $key = $rc.ResourcePath.ToLower()
+                $resCostMap[$rc.ResourcePath.ToLower()] = $rc
             }
-            $nameKey = ''
-            if ($rc.ResourcePath -match '/([^/]+)$') { $nameKey = $Matches[1].ToLower() }
-            if ($key) { $resCostMap[$key] = $rc }
-            if ($nameKey -and -not $resCostMap.ContainsKey($nameKey)) { $resCostMap[$nameKey] = $rc }
+            # Also key by name (last segment)
+            if ($rc.ResourcePath -match '/([^/]+)$') {
+                $nameKey = $Matches[1].ToLower()
+                if (-not $resCostMap.ContainsKey($nameKey)) { $resCostMap[$nameKey] = $rc }
+            }
         }
+    }
+
+    # Helper: find resource cost by constructing ARM ID, then fallback to name
+    function Find-ResourceCost {
+        param($Name, $SubscriptionId, $ResourceGroup, $ResourceType)
+        $rc = $null
+        # Try full ARM path first
+        if ($SubscriptionId -and $ResourceGroup -and $ResourceType -and $Name) {
+            $armId = "/subscriptions/$SubscriptionId/resourcegroups/$ResourceGroup/providers/$ResourceType/$Name".ToLower()
+            $rc = $resCostMap[$armId]
+        }
+        # Fallback to name-only
+        if (-not $rc -and $Name) {
+            $rc = $resCostMap[$Name.ToLower()]
+        }
+        return $rc
     }
 
     # Currency helper
@@ -359,11 +375,12 @@ function Populate-OptimizationTab {
 
         $ahbRows = @()
         foreach ($vm in $d.AHB.WindowsVMs) {
-            $rc = $null
-            if ($vm.name) { $rc = $resCostMap[$vm.name.ToLower()] }
+            $rc = Find-ResourceCost -Name $vm.name -SubscriptionId $vm.subscriptionId -ResourceGroup $vm.resourceGroup -ResourceType 'microsoft.compute/virtualmachines'
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
             # AHB saves ~40% on Windows VM licensing component
-            $withSavings = if ($forecast) { [math]::Round($forecast * 0.6, 2) } else { $null }
+            $ahbActual   = if ($actual)   { [math]::Round($actual   * 0.6, 2) } else { $null }
+            $ahbForecast = if ($forecast)  { [math]::Round($forecast * 0.6, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
                 Type              = 'Windows VM'
                 Name              = $vm.name
@@ -371,15 +388,18 @@ function Populate-OptimizationTab {
                 Size              = $vm.vmSize
                 CurrentLicense    = $vm.currentLicense
                 Location          = $vm.location
-                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
-                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
+                'Actual (MTD)'    = if ($actual)      { "$currency$($actual.ToString('N2'))" }      else { '-' }
+                'Forecast'        = if ($forecast)     { "$currency$($forecast.ToString('N2'))" }    else { '-' }
+                'With AHB (MTD)'  = if ($ahbActual)    { "$currency$($ahbActual.ToString('N2'))" }   else { '-' }
+                'With AHB (Mo.)'  = if ($ahbForecast)  { "$currency$($ahbForecast.ToString('N2'))" } else { '-' }
             }
         }
         foreach ($sql in $d.AHB.SQLVMs) {
-            $rc = $null
-            if ($sql.name) { $rc = $resCostMap[$sql.name.ToLower()] }
+            $rc = Find-ResourceCost -Name $sql.name -SubscriptionId $sql.subscriptionId -ResourceGroup $sql.resourceGroup -ResourceType 'microsoft.sqlvirtualmachine/sqlvirtualmachines'
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
-            $withSavings = if ($forecast) { [math]::Round($forecast * 0.45, 2) } else { $null }
+            $ahbActual   = if ($actual)   { [math]::Round($actual   * 0.45, 2) } else { $null }
+            $ahbForecast = if ($forecast)  { [math]::Round($forecast * 0.45, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
                 Type              = 'SQL VM'
                 Name              = $sql.name
@@ -387,16 +407,19 @@ function Populate-OptimizationTab {
                 Size              = $sql.sqlEdition
                 CurrentLicense    = $sql.currentLicense
                 Location          = $sql.location
-                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
-                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
+                'Actual (MTD)'    = if ($actual)      { "$currency$($actual.ToString('N2'))" }      else { '-' }
+                'Forecast'        = if ($forecast)     { "$currency$($forecast.ToString('N2'))" }    else { '-' }
+                'With AHB (MTD)'  = if ($ahbActual)    { "$currency$($ahbActual.ToString('N2'))" }   else { '-' }
+                'With AHB (Mo.)'  = if ($ahbForecast)  { "$currency$($ahbForecast.ToString('N2'))" } else { '-' }
             }
         }
         foreach ($db in $d.AHB.SQLDatabases) {
-            $rc = $null
-            if ($db.name) { $rc = $resCostMap[$db.name.ToLower()] }
+            $rc = Find-ResourceCost -Name $db.name -SubscriptionId $db.subscriptionId -ResourceGroup $db.resourceGroup -ResourceType 'microsoft.sql/servers/databases'
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
             # AHB saves ~55% on SQL DB licensing component
-            $withSavings = if ($forecast) { [math]::Round($forecast * 0.45, 2) } else { $null }
+            $ahbActual   = if ($actual)   { [math]::Round($actual   * 0.45, 2) } else { $null }
+            $ahbForecast = if ($forecast)  { [math]::Round($forecast * 0.45, 2) } else { $null }
             $ahbRows += [PSCustomObject]@{
                 Type              = 'SQL Database'
                 Name              = $db.name
@@ -404,8 +427,10 @@ function Populate-OptimizationTab {
                 Size              = $db.sku
                 CurrentLicense    = $db.currentLicense
                 Location          = $db.location
-                'Forecast Cost'   = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
-                'With AHB'        = if ($withSavings) { "$currency$($withSavings.ToString('N2'))" } else { '-' }
+                'Actual (MTD)'    = if ($actual)      { "$currency$($actual.ToString('N2'))" }      else { '-' }
+                'Forecast'        = if ($forecast)     { "$currency$($forecast.ToString('N2'))" }    else { '-' }
+                'With AHB (MTD)'  = if ($ahbActual)    { "$currency$($ahbActual.ToString('N2'))" }   else { '-' }
+                'With AHB (Mo.)'  = if ($ahbForecast)  { "$currency$($ahbForecast.ToString('N2'))" } else { '-' }
             }
         }
         if ($ahbRows.Count -eq 0) {
@@ -460,9 +485,10 @@ function Populate-OptimizationTab {
         # RI grid - Advisor RI recs + Reservation API recs
         $riRows = @()
         foreach ($rec in $riRecs) {
-            $rc = $null
-            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $rc = Find-ResourceCost -Name $rec.ResourceName -SubscriptionId $rec.SubscriptionId -ResourceGroup $null -ResourceType $rec.ResourceType
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
+            $monthlySavings = if ($rec.AnnualSavings) { [math]::Round($rec.AnnualSavings / 12, 2) } else { $null }
             $riRows += [PSCustomObject]@{
                 Subscription     = $rec.Subscription
                 Resource         = $rec.ResourceName
@@ -470,10 +496,10 @@ function Populate-OptimizationTab {
                 Impact           = $rec.Impact
                 Problem          = $rec.Problem
                 Solution         = $rec.Solution
-                Location         = if ($rc) { '-' } else { '-' }
                 Term             = if ($rec.Term) { $rec.Term } else { '-' }
-                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
-                'With RI'        = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Actual (MTD)'   = if ($actual) { "$currency$($actual.ToString('N2'))" } else { '-' }
+                'Forecast'       = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With RI (Mo.)'  = if ($monthlySavings -and $forecast) { "$currency$([math]::Round($forecast - $monthlySavings, 2).ToString('N2'))" } else { '-' }
                 'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
@@ -485,10 +511,10 @@ function Populate-OptimizationTab {
                 Impact           = 'High'
                 Problem          = "$($rr.RecommendedQty) x $($rr.ResourceType) at PAYG rates"
                 Solution         = "Purchase $($rr.RecommendedQty) reserved instance(s) ($($rr.Term))"
-                Location         = '-'
                 Term             = if ($rr.Term) { $rr.Term } else { '-' }
-                'Forecast Cost'  = if ($rr.CostWithoutRI) { "$currency$($rr.CostWithoutRI.ToString('N2'))" } else { '-' }
-                'With RI'        = if ($rr.CostWithRI) { "$currency$($rr.CostWithRI.ToString('N2'))" } else { '-' }
+                'Actual (MTD)'   = '-'
+                'Forecast'       = if ($rr.CostWithoutRI) { "$currency$($rr.CostWithoutRI.ToString('N2'))" } else { '-' }
+                'With RI (Mo.)'  = if ($rr.CostWithRI) { "$currency$($rr.CostWithRI.ToString('N2'))" } else { '-' }
                 'Annual Savings' = if ($rr.NetSavings) { "$currency$($rr.NetSavings.ToString('N2'))" } else { '-' }
             }
         }
@@ -501,9 +527,10 @@ function Populate-OptimizationTab {
         # SP grid
         $spRows = @()
         foreach ($rec in $spRecs) {
-            $rc = $null
-            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $rc = Find-ResourceCost -Name $rec.ResourceName -SubscriptionId $rec.SubscriptionId -ResourceGroup $null -ResourceType $rec.ResourceType
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
+            $monthlySavings = if ($rec.AnnualSavings) { [math]::Round($rec.AnnualSavings / 12, 2) } else { $null }
             $spRows += [PSCustomObject]@{
                 Subscription     = $rec.Subscription
                 Resource         = $rec.ResourceName
@@ -511,10 +538,10 @@ function Populate-OptimizationTab {
                 Impact           = $rec.Impact
                 Problem          = $rec.Problem
                 Solution         = $rec.Solution
-                Location         = if ($rc) { '-' } else { '-' }
                 Term             = if ($rec.Term) { $rec.Term } else { '-' }
-                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
-                'With SP'        = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Actual (MTD)'   = if ($actual) { "$currency$($actual.ToString('N2'))" } else { '-' }
+                'Forecast'       = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With SP (Mo.)'  = if ($monthlySavings -and $forecast) { "$currency$([math]::Round($forecast - $monthlySavings, 2).ToString('N2'))" } else { '-' }
                 'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
@@ -535,9 +562,10 @@ function Populate-OptimizationTab {
 
         $advRows = @()
         foreach ($rec in $d.Optimization.Recommendations) {
-            $rc = $null
-            if ($rec.ResourceName) { $rc = $resCostMap[$rec.ResourceName.ToLower()] }
+            $rc = Find-ResourceCost -Name $rec.ResourceName -SubscriptionId $rec.SubscriptionId -ResourceGroup $null -ResourceType $rec.ResourceType
+            $actual   = if ($rc) { $rc.Actual } else { $null }
             $forecast = if ($rc) { $rc.Forecast } else { $null }
+            $monthlySavings = if ($rec.AnnualSavings) { [math]::Round($rec.AnnualSavings / 12, 2) } else { $null }
             $advRows += [PSCustomObject]@{
                 Category         = $rec.Category
                 Subscription     = $rec.Subscription
@@ -545,8 +573,9 @@ function Populate-OptimizationTab {
                 Resource         = $rec.ResourceName
                 Problem          = $rec.Problem
                 Solution         = $rec.Solution
-                'Forecast Cost'  = if ($forecast) { "$currency$($forecast.ToString('N2'))/mo" } else { '-' }
-                'With Fix'       = if ($rec.AnnualSavings -and $forecast) { "$currency$([math]::Round($forecast - ($rec.AnnualSavings / 12), 2).ToString('N2'))/mo" } elseif ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))/yr savings" } else { '-' }
+                'Actual (MTD)'   = if ($actual) { "$currency$($actual.ToString('N2'))" } else { '-' }
+                'Forecast'       = if ($forecast) { "$currency$($forecast.ToString('N2'))" } else { '-' }
+                'With Fix (Mo.)' = if ($monthlySavings -and $forecast) { "$currency$([math]::Round($forecast - $monthlySavings, 2).ToString('N2'))" } else { '-' }
                 'Annual Savings' = if ($rec.AnnualSavings) { "$currency$($rec.AnnualSavings.ToString('N2'))" } else { '-' }
             }
         }
@@ -727,6 +756,7 @@ $script:scanStages = @(
         }
         $envLabel = $script:scanData.Auth.Environment
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
+        $script:TenantButton.Content = "$($script:LockClosed) Choose Tenant"
     }}
     @{ Label = 'Loading management group hierarchy...'; Pct = 15;  Action = {
         $script:scanData.Hierarchy = Get-TenantHierarchy -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
@@ -826,10 +856,16 @@ $script:ScanButton.Add_Click({
     $script:scanTimer.Start()
 })
 
+# Lock icon characters (surrogates for PS 5.1 compat)
+$script:LockOpen   = [char]::ConvertFromUtf32(0x1F513)   # open lock
+$script:LockClosed = [char]::ConvertFromUtf32(0x1F512)   # closed lock
+
 # Choose Tenant Button
 $script:TenantButton.Add_Click({
     $script:TenantButton.IsEnabled = $false
     $script:ScanButton.IsEnabled = $false
+    # Show unlocked while choosing
+    $script:TenantButton.Content = "$($script:LockOpen) Choose Tenant"
     $script:StatusText.Text = 'Choose a tenant...'
     try {
         $script:scanData.Auth = Initialize-Scanner -ParentWindow $window
@@ -837,6 +873,8 @@ $script:TenantButton.Add_Click({
         $subCount = $script:scanData.Auth.Subscriptions.Count
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
         $script:StatusText.Text = "Connected to $envLabel ($subCount subscriptions). Click 'Scan Tenant' to begin."
+        # Show locked after successful selection
+        $script:TenantButton.Content = "$($script:LockClosed) Choose Tenant"
     } catch {
         $script:StatusText.Text = "Tenant switch failed: $($_.Exception.Message)"
     }
@@ -855,12 +893,16 @@ $script:TagSelector.Add_SelectionChanged({
     if (-not $selectedTag -or -not $script:scanData.CostByTag) { return }
 
     $data = $script:scanData.CostByTag.CostByTag
+    $tf   = $script:scanData.CostByTag.UsedTimeframe
+    $costLabel = if ($tf -eq 'TheLastMonth') { 'Cost (Last Month)' } else { 'Cost (MTD)' }
+
     if ($data.ContainsKey($selectedTag) -and $data[$selectedTag].Count -gt 0) {
-        $script:NoTagsLabel.Text = ''
+        $tfNote = if ($tf -eq 'TheLastMonth') { ' (showing last month - current month data still processing)' } else { '' }
+        $script:NoTagsLabel.Text = $tfNote
         $rows = $data[$selectedTag] | ForEach-Object {
             [PSCustomObject]@{
-                'Tag Value' = $_.TagValue
-                'Cost (MTD)' = $_.Cost.ToString('N2')
+                'Tag Value'  = $_.TagValue
+                $costLabel   = $_.Cost.ToString('N2')
                 'Currency'   = $_.Currency
             }
         }
