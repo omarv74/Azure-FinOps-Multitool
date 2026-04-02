@@ -11,7 +11,10 @@ function Get-SavingsRealized {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [Parameter()]
+        [string]$TenantId
     )
 
     Write-Host "  Calculating savings already realized..." -ForegroundColor Cyan
@@ -21,6 +24,93 @@ function Get-SavingsRealized {
     $ahbSavings = 0
     $details    = [System.Collections.Generic.List[PSCustomObject]]::new()
 
+    $gotMgData = $false
+
+    # -- Strategy 1: MG-scope queries (2 API calls instead of N*2) ------
+    if ($TenantId) {
+        try {
+            Write-Host "  Calculating savings (MG scope)..." -ForegroundColor Cyan
+            $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+
+            # ActualCost by ChargeType
+            $actualBody = @{
+                type      = 'ActualCost'
+                timeframe = 'MonthToDate'
+                dataset   = @{
+                    granularity = 'None'
+                    aggregation = @{ totalCost = @{ name = 'Cost'; function = 'Sum' } }
+                    grouping = @( @{ type = 'Dimension'; name = 'ChargeType' } )
+                }
+            } | ConvertTo-Json -Depth 10
+
+            $actualResp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $actualBody -ErrorAction Stop
+            if ($actualResp.StatusCode -eq 200) {
+                $actualResult = ($actualResp.Content | ConvertFrom-Json)
+                if ($actualResult.properties.rows) {
+                    foreach ($row in $actualResult.properties.rows) {
+                        $chargeType = $row[1]
+                        $cost = [math]::Round([double]$row[0], 2)
+                        if ($chargeType -match 'UnusedReservation') {
+                            [void]$details.Add([PSCustomObject]@{
+                                Subscription = 'All (MG scope)'
+                                Category     = 'Unused Reservation'
+                                Amount       = $cost
+                                Type         = 'Waste'
+                            })
+                        }
+                    }
+                }
+            }
+
+            # AmortizedCost by PricingModel
+            $amortBody = @{
+                type      = 'AmortizedCost'
+                timeframe = 'MonthToDate'
+                dataset   = @{
+                    granularity = 'None'
+                    aggregation = @{ totalCost = @{ name = 'Cost'; function = 'Sum' } }
+                    grouping = @( @{ type = 'Dimension'; name = 'PricingModel' } )
+                }
+            } | ConvertTo-Json -Depth 10
+
+            $amortResp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $amortBody -ErrorAction Stop
+            if ($amortResp.StatusCode -eq 200) {
+                $amortResult = ($amortResp.Content | ConvertFrom-Json)
+                if ($amortResult.properties.rows) {
+                    foreach ($row in $amortResult.properties.rows) {
+                        $pricingModel = $row[1]
+                        $cost = [math]::Round([double]$row[0], 2)
+                        if ($pricingModel -match 'Reservation') {
+                            $riSavings += $cost * 0.4
+                            [void]$details.Add([PSCustomObject]@{
+                                Subscription = 'All (MG scope)'
+                                Category     = 'Reservation Benefit'
+                                Amount       = $cost
+                                Type         = 'Commitment'
+                            })
+                        }
+                        elseif ($pricingModel -match 'SavingsPlan') {
+                            $spSavings += $cost * 0.25
+                            [void]$details.Add([PSCustomObject]@{
+                                Subscription = 'All (MG scope)'
+                                Category     = 'Savings Plan Benefit'
+                                Amount       = $cost
+                                Type         = 'Commitment'
+                            })
+                        }
+                    }
+                }
+            }
+
+            $gotMgData = $true
+            Write-Host "  MG scope savings calculated (2 API calls)" -ForegroundColor Green
+        } catch {
+            Write-Warning "  MG-scope savings query failed: $($_.Exception.Message)"
+        }
+    }
+
+    # -- Strategy 2: Per-subscription fallback ---------------------------
+    if (-not $gotMgData) {
     # -- Step 1: Query amortized vs actual to find RI/SP benefit amounts --
     # The difference between ActualCost and AmortizedCost reveals commitment savings
     foreach ($sub in $Subscriptions) {
@@ -113,6 +203,7 @@ function Get-SavingsRealized {
             Write-Warning "  Savings query failed for $($sub.Name): $($_.Exception.Message)"
         }
     }
+    } # end per-sub fallback
 
     # -- Step 2: AHB savings estimate from Resource Graph -----------------
     try {

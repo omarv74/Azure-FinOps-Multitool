@@ -1288,13 +1288,13 @@ $script:scanStages = @(
         $script:scanData.Hierarchy = Get-TenantHierarchy -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Detecting contract type...';           Pct = 25;  Action = {
-        $script:scanData.Contract = Get-ContractInfo
+        $script:scanData.Contract = Get-ContractInfo -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying cost data...';                Pct = 30;  Action = {
         $script:scanData.Costs = Get-CostData -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying resource-level costs...';      Pct = 40;  Action = {
-        $script:scanData.ResourceCosts = Get-ResourceCosts -Subscriptions $script:scanData.Auth.Subscriptions
+        $script:scanData.ResourceCosts = Get-ResourceCosts -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs
     }}
     @{ Label = 'Scanning tag inventory...';            Pct = 50;  Action = {
         $script:scanData.Tags = Get-TagInventory -Subscriptions $script:scanData.Auth.Subscriptions
@@ -1325,7 +1325,7 @@ $script:scanStages = @(
         $script:scanData.Budgets = Get-BudgetStatus -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs
     }}
     @{ Label = 'Calculating savings realized...';      Pct = 86;  Action = {
-        $script:scanData.Savings = Get-SavingsRealized -Subscriptions $script:scanData.Auth.Subscriptions
+        $script:scanData.Savings = Get-SavingsRealized -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Analyzing tag compliance...';          Pct = 88;  Action = {
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }

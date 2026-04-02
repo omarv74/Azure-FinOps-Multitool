@@ -10,7 +10,13 @@ function Get-ResourceCosts {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [Parameter()]
+        [string]$TenantId,
+
+        [Parameter()]
+        [hashtable]$CostData      # Per-sub cost data for forecast ratio distribution
     )
 
     $allRows = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -54,6 +60,120 @@ function Get-ResourceCosts {
         'microsoft.hybridcompute/machines'              = 'Arc Server'
     }
 
+    $gotMgData = $false
+
+    # -- Strategy 1: MG-scope query (1-10 API calls instead of 300+) ----
+    if ($TenantId) {
+        try {
+            Write-Host "  Querying resource costs (MG scope)..." -ForegroundColor Cyan
+            $body = @{
+                type      = 'ActualCost'
+                timeframe = 'MonthToDate'
+                dataset   = @{
+                    granularity = 'None'
+                    aggregation = @{
+                        totalCost = @{ name = 'Cost'; function = 'Sum' }
+                    }
+                    grouping = @(
+                        @{ type = 'Dimension'; name = 'ResourceId' }
+                        @{ type = 'Dimension'; name = 'ResourceGroupName' }
+                    )
+                }
+            } | ConvertTo-Json -Depth 10
+
+            $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+            $resp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $body -ErrorAction Stop
+
+            if ($resp.StatusCode -eq 200) {
+                $result = ($resp.Content | ConvertFrom-Json)
+                $cols = @{}
+                for ($i = 0; $i -lt $result.properties.columns.Count; $i++) {
+                    $cols[$result.properties.columns[$i].name] = $i
+                }
+
+                $page = $result
+                $pageNum = 0
+                do {
+                    $pageNum++
+                    if ($page.properties.rows) {
+                        if ($pageNum -eq 1 -or $pageNum % 3 -eq 0) {
+                            Write-Host "    Page $pageNum ($($page.properties.rows.Count) rows)..." -ForegroundColor Gray
+                        }
+                        foreach ($row in $page.properties.rows) {
+                            $cost       = [math]::Round($row[$cols['Cost']], 2)
+                            $currency   = $row[$cols['Currency']]
+                            $resourceId = $row[$cols['ResourceId']]
+                            $rg         = $row[$cols['ResourceGroupName']]
+
+                            $resType = 'Unknown'
+                            $resName = $resourceId
+                            if ($resourceId -match '/providers/(.+)/([^/]+)$') {
+                                $providerType = $Matches[1].ToLower()
+                                $resName = $Matches[2]
+                                $resType = if ($typeMap.ContainsKey($providerType)) { $typeMap[$providerType] } else { $providerType -replace 'microsoft\.', '' }
+                            }
+
+                            [void]$allRows.Add([PSCustomObject]@{
+                                Subscription  = ''
+                                ResourceGroup = $rg
+                                ResourceType  = $resType
+                                ResourcePath  = $resourceId
+                                Actual        = $cost
+                                Forecast      = $cost
+                                Currency      = $currency
+                            })
+                        }
+                    }
+                    if ($page.properties.nextLink) {
+                        $nextUri = [System.Uri]$page.properties.nextLink
+                        $nResp = Invoke-AzRestMethod -Path $nextUri.PathAndQuery -Method GET -ErrorAction Stop
+                        if ($nResp.StatusCode -eq 200) { $page = ($nResp.Content | ConvertFrom-Json) }
+                        else { break }
+                    } else { break }
+                } while ($true)
+
+                if ($allRows.Count -gt 0) {
+                    $gotMgData = $true
+                    Write-Host "  MG scope: $($allRows.Count) resources across $pageNum page(s)" -ForegroundColor Green
+
+                    # Populate subscription names from ARM resource ID
+                    $subNameMap = @{}
+                    foreach ($sub in $Subscriptions) { $subNameMap[$sub.Id.ToLower()] = $sub.Name }
+                    foreach ($r in $allRows) {
+                        if ($r.ResourcePath -match '/subscriptions/([^/]+)/') {
+                            $sid = $Matches[1].ToLower()
+                            $r.Subscription = if ($subNameMap.ContainsKey($sid)) { $subNameMap[$sid] } else { $sid }
+                        }
+                    }
+
+                    # Apply forecast ratios from CostData (actual + forecast per sub)
+                    if ($CostData) {
+                        $ratios = @{}
+                        foreach ($entry in $CostData.GetEnumerator()) {
+                            $a = $entry.Value.Actual
+                            $f = $entry.Value.Forecast
+                            if ($a -gt 0 -and $f -gt $a) { $ratios[$entry.Key.ToLower()] = $f / $a }
+                        }
+                        foreach ($r in $allRows) {
+                            if ($r.ResourcePath -match '/subscriptions/([^/]+)/') {
+                                $sid = $Matches[1].ToLower()
+                                if ($ratios.ContainsKey($sid)) {
+                                    $r.Forecast = [math]::Round($r.Actual * $ratios[$sid], 2)
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Write-Warning "  MG-scope resource cost query returned HTTP $($resp.StatusCode)"
+            }
+        } catch {
+            Write-Warning "  MG-scope resource cost query failed: $($_.Exception.Message)"
+        }
+    }
+
+    # -- Strategy 2: Per-subscription fallback (only if MG scope failed) -
+    if (-not $gotMgData) {
     foreach ($sub in $Subscriptions) {
         $basePath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement"
 
@@ -187,6 +307,7 @@ function Get-ResourceCosts {
             [void]$allRows.Add($entry)
         }
     }
+    } # end per-sub fallback
 
     return $allRows
 }

@@ -16,82 +16,105 @@
 
 function Get-ContractInfo {
     [CmdletBinding()]
-    param()
+    param(
+        [Parameter()]
+        [object[]]$Subscriptions
+    )
 
+    $inferredAgreement = $null
+    $inferredFriendly  = $null
+
+    # -- Step 1: Detect agreement type from subscription quotaId ---------
+    # QuotaId is always scoped to the correct tenant when using passed subs
+    $subsToCheck = if ($Subscriptions) { @($Subscriptions | Select-Object -First 3) } else { @() }
+    if ($subsToCheck.Count -eq 0) {
+        try { $subsToCheck = @(Get-AzSubscription -ErrorAction SilentlyContinue | Select-Object -First 3) } catch { }
+    }
+
+    foreach ($sub in $subsToCheck) {
+        try {
+            $subPath = "/subscriptions/$($sub.Id)?api-version=2022-12-01"
+            $subResp = Invoke-AzRestMethod -Path $subPath -Method GET -ErrorAction SilentlyContinue
+            if ($subResp.StatusCode -eq 200) {
+                $subDetail = ($subResp.Content | ConvertFrom-Json)
+                $quotaId = $subDetail.properties.subscriptionPolicies.quotaId
+
+                $mapped = switch -Regex ($quotaId) {
+                    'EnterpriseAgreement'       { @{ Agreement = 'EnterpriseAgreement'; Friendly = 'Enterprise Agreement (EA)' } }
+                    'MCSFree|MSDN|Visual'       { @{ Agreement = 'MSDN'; Friendly = 'Visual Studio / MSDN' } }
+                    'PayAsYouGo|PAYG'           { @{ Agreement = 'MicrosoftOnlineServicesProgram'; Friendly = 'Pay-As-You-Go (PAYGO)' } }
+                    'Sponsored'                 { @{ Agreement = 'Sponsored'; Friendly = 'Azure Sponsored' } }
+                    'CSP'                       { @{ Agreement = 'MicrosoftPartnerAgreement'; Friendly = 'CSP / Partner Agreement' } }
+                    'Internal'                  { @{ Agreement = 'Internal'; Friendly = 'Microsoft Internal' } }
+                    'MCA'                       { @{ Agreement = 'MicrosoftCustomerAgreement'; Friendly = 'Microsoft Customer Agreement (MCA)' } }
+                    'FreeTrial'                 { @{ Agreement = 'FreeTrial'; Friendly = 'Free Trial' } }
+                    'AAD'                       { @{ Agreement = 'AAD'; Friendly = 'Azure AD Subscription' } }
+                    'MSAZR'                     { @{ Agreement = 'MicrosoftOnlineServicesProgram'; Friendly = 'Pay-As-You-Go (PAYGO)' } }
+                    default                     { @{ Agreement = $quotaId; Friendly = $quotaId } }
+                }
+
+                if ($mapped) {
+                    $inferredAgreement = $mapped.Agreement
+                    $inferredFriendly  = $mapped.Friendly
+                    Write-Host "  QuotaId detected: $quotaId -> $inferredFriendly" -ForegroundColor Green
+                    break
+                }
+            }
+        } catch { }
+    }
+
+    # -- Step 2: Try billing accounts API, filtered by inferred type -----
     try {
-        # Try REST API for billing accounts (more reliable across contract types)
         $response = Invoke-AzRestMethod -Path "/providers/Microsoft.Billing/billingAccounts?api-version=2024-04-01" -Method GET -ErrorAction Stop
         $result = ($response.Content | ConvertFrom-Json)
 
         if ($result.value -and $result.value.Count -gt 0) {
-            $accounts = @()
-            foreach ($acct in $result.value) {
-                $props = $acct.properties
-                $agreementType = $props.agreementType
+            $matchedAccount = $null
 
-                $friendlyType = switch ($agreementType) {
-                    'EnterpriseAgreement'            { 'Enterprise Agreement (EA)' }
-                    'MicrosoftCustomerAgreement'     { 'Microsoft Customer Agreement (MCA)' }
-                    'MicrosoftOnlineServicesProgram'  { 'Pay-As-You-Go (PAYGO)' }
-                    'MicrosoftPartnerAgreement'       { 'CSP / Partner Agreement (MPA)' }
-                    default                           { $agreementType }
-                }
-
-                $accounts += [PSCustomObject]@{
-                    AccountName   = $props.displayName
-                    AccountId     = $acct.name
-                    AgreementType = $agreementType
-                    FriendlyType  = $friendlyType
-                    AccountStatus = $props.accountStatus
-                    Currency      = if ($props.soldTo) { $props.soldTo.country } else { 'Unknown' }
-                }
+            # If multiple billing accounts and we know the agreement type, filter
+            if ($inferredAgreement -and $result.value.Count -gt 1) {
+                $matchedAccount = $result.value | Where-Object {
+                    $_.properties.agreementType -eq $inferredAgreement
+                } | Select-Object -First 1
             }
-            return $accounts
+            if (-not $matchedAccount) {
+                # If only one account or no match, use first
+                $matchedAccount = $result.value | Select-Object -First 1
+            }
+
+            $props = $matchedAccount.properties
+            $friendlyType = switch ($props.agreementType) {
+                'EnterpriseAgreement'            { 'Enterprise Agreement (EA)' }
+                'MicrosoftCustomerAgreement'     { 'Microsoft Customer Agreement (MCA)' }
+                'MicrosoftOnlineServicesProgram'  { 'Pay-As-You-Go (PAYGO)' }
+                'MicrosoftPartnerAgreement'       { 'CSP / Partner Agreement (MPA)' }
+                default                           { $props.agreementType }
+            }
+
+            return @([PSCustomObject]@{
+                AccountName   = $props.displayName
+                AccountId     = $matchedAccount.name
+                AgreementType = $props.agreementType
+                FriendlyType  = $friendlyType
+                AccountStatus = $props.accountStatus
+                Currency      = if ($props.soldTo) { $props.soldTo.country } else { 'Unknown' }
+            })
         }
     } catch {
         Write-Warning "Billing account query failed: $($_.Exception.Message)"
     }
 
-    # Fallback: infer contract type from subscription offer ID (no billing permissions needed)
-    Write-Host "  Attempting contract detection from subscription offer..." -ForegroundColor Cyan
-    try {
-        $subs = @(Get-AzSubscription -ErrorAction SilentlyContinue | Select-Object -First 3)
-        foreach ($sub in $subs) {
-            $subPath = "/subscriptions/$($sub.Id)?api-version=2022-12-01"
-            $subResp = Invoke-AzRestMethod -Path $subPath -Method GET -ErrorAction SilentlyContinue
-            if ($subResp.StatusCode -eq 200) {
-                $subDetail = ($subResp.Content | ConvertFrom-Json)
-                $offerId = $subDetail.properties.subscriptionPolicies.spendingLimit
-                $quotaId = $subDetail.properties.subscriptionPolicies.quotaId
-
-                $inferredType = switch -Regex ($quotaId) {
-                    'EnterpriseAgreement'       { 'Enterprise Agreement (EA)' }
-                    'MCSFree|MSDN|Visual'       { 'Visual Studio / MSDN' }
-                    'PayAsYouGo|PAYG'           { 'Pay-As-You-Go (PAYGO)' }
-                    'Sponsored'                 { 'Azure Sponsored' }
-                    'CSP'                       { 'CSP / Partner Agreement' }
-                    'Internal'                  { 'Microsoft Internal' }
-                    'MCA'                       { 'Microsoft Customer Agreement (MCA)' }
-                    'FreeTrial'                 { 'Free Trial' }
-                    'AAD'                       { 'Azure AD Subscription' }
-                    'MSAZR'                     { 'Pay-As-You-Go (PAYGO)' }
-                    default                     { $quotaId }
-                }
-
-                if ($inferredType) {
-                    return @([PSCustomObject]@{
-                        AccountName   = "Inferred from subscription: $($sub.Name)"
-                        AccountId     = $sub.Id
-                        AgreementType = $quotaId
-                        FriendlyType  = $inferredType
-                        AccountStatus = 'Active'
-                        Currency      = 'Unknown'
-                    })
-                }
-            }
-        }
-    } catch {
-        Write-Warning "Subscription-based contract detection failed: $($_.Exception.Message)"
+    # -- Step 3: Return quotaId-based inference if billing API failed ----
+    if ($inferredAgreement) {
+        $subName = if ($subsToCheck.Count -gt 0) { $subsToCheck[0].Name } else { 'Unknown' }
+        return @([PSCustomObject]@{
+            AccountName   = "Inferred from subscription: $subName"
+            AccountId     = if ($subsToCheck.Count -gt 0) { $subsToCheck[0].Id } else { '' }
+            AgreementType = $inferredAgreement
+            FriendlyType  = $inferredFriendly
+            AccountStatus = 'Active'
+            Currency      = 'Unknown'
+        })
     }
 
     return @([PSCustomObject]@{
