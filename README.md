@@ -16,14 +16,20 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 ### Choose Tenant — Multi-Tenant Picker
 ![Choose Tenant](screenshots/chooseTenant.png)
 
-### Overview — Cost Summary & Resources by Spend
+### Overview — Cost Summary, Budget Status & Subscription Scorecard
 ![Overview](screenshots/overview.png)
+
+### Cost Analysis — Trend Chart, Anomalies & Cost by Tag
+![Cost Analysis](screenshots/cost-analysis.png)
 
 ### Tags — Inventory & CAF Compliance
 ![Tags](screenshots/tags.png)
 
-### Optimization — AHB, RI, Savings Plans, Advisor
+### Optimization — Commitments, Orphaned Resources, AHB, RI/SP, Advisor
 ![Optimization](screenshots/optimization.png)
+
+### Billing — Accounts, Profiles, Invoice Sections, Cost Allocation
+![Billing](screenshots/billing.png)
 
 ### FinOps Guidance — Maturity Assessment
 ![FinOps Guidance](screenshots/finops-guidance.png)
