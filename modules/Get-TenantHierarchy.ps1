@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-TENANTHIERARCHY.PS1
-# AZURE FINOPS SCANNER - Management Group & Subscription Hierarchy
+# AZURE FINOPS MULTITOOL - Management Group & Subscription Hierarchy
 ###########################################################################
 # Purpose: Retrieve the full management group tree with subscriptions
 #          nested under their parent groups.

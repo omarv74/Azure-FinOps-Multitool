@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-TAGRECOMMENDATIONS.PS1
-# AZURE FINOPS SCANNER - Tag Recommendations (MS Best Practices)
+# AZURE FINOPS MULTITOOL - Tag Recommendations (MS Best Practices)
 ###########################################################################
 # Purpose: Compare the customer's actual tags against Microsoft's
 #          recommended tagging strategy from the Cloud Adoption Framework.

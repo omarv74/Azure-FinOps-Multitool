@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-TAGINVENTORY.PS1
-# AZURE FINOPS SCANNER - Tag Inventory Across the Tenant
+# AZURE FINOPS MULTITOOL - Tag Inventory Across the Tenant
 ###########################################################################
 # Purpose: Use Azure Resource Graph to discover every tag name and value
 #          in use across all subscriptions, along with resource counts

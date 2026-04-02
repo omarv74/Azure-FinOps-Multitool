@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-AHBOPPORTUNITIES.PS1
-# AZURE FINOPS SCANNER - Azure Hybrid Benefit Gap Detection
+# AZURE FINOPS MULTITOOL - Azure Hybrid Benefit Gap Detection
 ###########################################################################
 # Purpose: Use Resource Graph to find VMs and SQL resources that are NOT
 #          using Azure Hybrid Benefit (AHB) but could be. AHB saves up

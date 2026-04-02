@@ -1,12 +1,12 @@
 ﻿###########################################################################
-# START-FINOPSSCANNER.PS1
-# AZURE FINOPS SCANNER - Main Entry Point
+# START-FINOPSMULTITOOL.PS1
+# AZURE FINOPS MULTITOOL - Main Entry Point
 ###########################################################################
-# Purpose: Launch the Azure FinOps Scanner WPF application. Authenticates
+# Purpose: Launch the AZURE FINOPS MULTITOOL WPF application. Authenticates
 #          to Azure, scans the tenant for cost/tag/optimization data, and
 #          displays results in an interactive GUI.
 #
-# Usage:   .\Start-FinOpsScanner.ps1
+# Usage:   .\Start-FinOpsMultitool.ps1
 #
 # Requirements:
 #   - PowerShell 5.1+ (Windows) or 7+ with WindowsCompatibility
@@ -933,7 +933,7 @@ $script:HierarchyTree.Add_SelectedItemChanged({
 ###########################################################################
 Write-Host ""
 Write-Host "  ========================================" -ForegroundColor Cyan
-Write-Host "  Azure FinOps Scanner" -ForegroundColor Cyan
+Write-Host "  AZURE FINOPS MULTITOOL" -ForegroundColor Cyan
 Write-Host "  ========================================" -ForegroundColor Cyan
 Write-Host "  Launching GUI..." -ForegroundColor Cyan
 Write-Host ""

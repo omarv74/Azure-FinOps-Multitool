@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-COSTDATA.PS1
-# AZURE FINOPS SCANNER - Current & Forecasted Cost Data
+# AZURE FINOPS MULTITOOL - Current & Forecasted Cost Data
 ###########################################################################
 # Purpose: Query Cost Management API at the management-group scope to
 #          retrieve actual month-to-date spend and forecasted spend for

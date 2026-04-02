@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # INITIALIZE-SCANNER.PS1
-# AZURE FINOPS SCANNER - Authentication & Prerequisites
+# AZURE FINOPS MULTITOOL - Authentication & Prerequisites
 ###########################################################################
 # Purpose: Validate required Az modules, authenticate to Azure, and return
 #          tenant context for the scanner to operate against.

@@ -1,8 +1,8 @@
 ###########################################################################
-# AZURE FINOPS SCANNER — README
+# AZURE FINOPS MULTITOOL — README
 ###########################################################################
 
-# Azure FinOps Scanner
+# AZURE FINOPS MULTITOOL
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -65,10 +65,10 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
    | **Cost Management Reader** | Tenant root or MG | Query cost and forecast data         |
    | **Billing Reader**       | Billing account   | Detect contract type (optional)      |
 
-   > If some roles are missing, the scanner still works — it just skips
+   > If some roles are missing, the tool still works — it just skips
    > the data it can't access and shows warnings.
 
-4. **Azure Government** — fully supported. The scanner auto-detects
+4. **Azure Government** — fully supported. the tool auto-detects
    `AzureCloud` vs `AzureUSGovernment` from your existing session, or
    prompts you to choose if no session exists.
 
@@ -77,15 +77,15 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 ## Quick Start
 
 ```powershell
-cd AzureFinOpsScanner
-.\Start-FinOpsScanner.ps1
+cd AzureFinOpsMultitool
+.\Start-FinOpsMultitool.ps1
 ```
 
 1. The WPF window opens (no authentication yet)
 2. Click **Choose Tenant** — a browser login opens; after sign-in, a
    tenant picker dialog lists all accessible tenants
 3. Select a tenant and click **Select**
-4. Click **Scan Tenant** — the scanner runs through 14 data-collection
+4. Click **Scan Tenant** — the tool runs through 14 data-collection
    stages with a progress bar
 5. When done, browse the tabs:
    - **Overview** — cost summary cards, subscription cost table, top resources by spend
@@ -103,8 +103,8 @@ cd AzureFinOpsScanner
 ## Project Structure
 
 ```
-AzureFinOpsScanner/
-├── Start-FinOpsScanner.ps1              # Entry point — loads modules, launches GUI
+AzureFinOpsMultitool/
+├── Start-FinOpsMultitool.ps1              # Entry point — loads modules, launches GUI
 ├── modules/
 │   ├── Initialize-Scanner.ps1           # Auth, tenant picker, environment detection (Commercial/Gov)
 │   ├── Get-TenantHierarchy.ps1          # Management group tree
@@ -146,7 +146,7 @@ a `DispatcherTimer` so the UI updates between stages.
 
 > **Performance Note:** Cost queries try management-group scope first
 > (one call for all subs). If MG scope returns a non-200 status (e.g.
-> RBAC), the scanner falls back to per-subscription queries. Advisor
+> RBAC), the tool falls back to per-subscription queries. Advisor
 > recommendations use Azure Resource Graph (`advisorresources` table)
 > for a single cross-subscription query instead of per-sub REST calls,
 > with automatic fallback to per-subscription REST if ARG is unavailable.
@@ -189,7 +189,7 @@ a `DispatcherTimer` so the UI updates between stages.
 
 - **Add a tag to recommendations**: Edit `Get-TagRecommendations.ps1` → `$recommendedTags` array
 - **Change theme colors**: Edit `gui/MainWindow.xaml` → `Window.Resources` brushes
-- **Add a new data module**: Create `modules/Get-YourData.ps1`, dot-source in `Start-FinOpsScanner.ps1`, add a scan stage
+- **Add a new data module**: Create `modules/Get-YourData.ps1`, dot-source in `Start-FinOpsMultitool.ps1`, add a scan stage
 
 ---
 
@@ -200,15 +200,15 @@ a `DispatcherTimer` so the UI updates between stages.
 | "Missing required modules" on launch | Az modules not installed | `Install-Module Az.Accounts, Az.Resources, ...` |
 | Cost cards show $0.00 | No Cost Management Reader role | Assign role at MG or subscription scope |
 | Contract type shows dash | No Billing Reader and quotaId fallback failed | Assign Billing Reader (optional — quotaId auto-detects most types) |
-| Cost by Tag shows "no data" | April 1st / early month — no MTD data yet | Scanner auto-falls back to last month's data |
+| Cost by Tag shows "no data" | April 1st / early month — no MTD data yet | Tool auto-falls back to last month's data |
 | Tree shows flat list (no MGs) | No Management Group reader access | Assign Reader at tenant root group |
 | Advisor tabs empty | Advisor not enabled or no cost recs | Normal for small/new subscriptions |
 | Forecast shows $0.00 | Forecast not available for account type | Common for MCA in first billing period |
 | Resources table shows blue bar only | DataGrid binding issue | Ensure `@()` wrapper on ItemsSource |
 | Scan hangs at 90% | Large tenant with many subscriptions | Advisor now uses Resource Graph; should be fast |
 | Gov tenant not detected | No existing Az session | Click Choose Tenant — auto-detects on login |
-| Console shows subscription picker | Az.Accounts 12+ login experience | Fixed — scanner sets `AZURE_LOGIN_EXPERIENCE_V2=Off` |
-| Scanner stays minimized | Auth error during Connect-AzAccount | Fixed — try/finally ensures window restores |
+| Console shows subscription picker | Az.Accounts 12+ login experience | Fixed — tool sets `AZURE_LOGIN_EXPERIENCE_V2=Off` |
+| Tool stays minimized | Auth error during Connect-AzAccount | Fixed — try/finally ensures window restores |
 
 ---
 

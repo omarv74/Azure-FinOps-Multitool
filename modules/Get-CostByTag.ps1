@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-COSTBYTAG.PS1
-# AZURE FINOPS SCANNER - Cost Breakdown by Tag
+# AZURE FINOPS MULTITOOL - Cost Breakdown by Tag
 ###########################################################################
 # Purpose: For each relevant tag (CostCenter, Environment, Application,
 #          etc.), query Cost Management to show how spend distributes

@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-OPTIMIZATIONADVICE.PS1
-# AZURE FINOPS SCANNER - Azure Advisor Cost Optimization
+# AZURE FINOPS MULTITOOL - Azure Advisor Cost Optimization
 ###########################################################################
 # Purpose: Pull all cost optimization recommendations from Azure Advisor
 #          across every subscription. Categorize by type: rightsize,

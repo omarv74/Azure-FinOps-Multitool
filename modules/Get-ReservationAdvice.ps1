@@ -1,6 +1,6 @@
 ﻿###########################################################################
 # GET-RESERVATIONADVICE.PS1
-# AZURE FINOPS SCANNER - Reservation & Savings Plan Recommendations
+# AZURE FINOPS MULTITOOL - Reservation & Savings Plan Recommendations
 ###########################################################################
 # Purpose: Pull RI (Reserved Instance) and Savings Plan recommendations
 #          from Azure Advisor and the Reservation Recommendation API.

@@ -1,6 +1,6 @@
-###########################################################################
+﻿###########################################################################
 # GET-RESOURCECOSTS.PS1
-# AZURE FINOPS SCANNER - Per-Resource Cost Breakdown
+# AZURE FINOPS MULTITOOL - Per-Resource Cost Breakdown
 ###########################################################################
 # Purpose: Query Cost Management per subscription to retrieve actual and
 #          forecasted spend grouped by individual resource.
