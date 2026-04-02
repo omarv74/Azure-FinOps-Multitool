@@ -42,6 +42,9 @@ $modulePath = Join-Path $PSScriptRoot 'modules'
 . (Join-Path $modulePath 'Get-OrphanedResources.ps1')
 . (Join-Path $modulePath 'Get-BudgetStatus.ps1')
 . (Join-Path $modulePath 'Get-SavingsRealized.ps1')
+. (Join-Path $modulePath 'Get-PolicyInventory.ps1')
+. (Join-Path $modulePath 'Get-PolicyRecommendations.ps1')
+. (Join-Path $modulePath 'Deploy-PolicyAssignment.ps1')
 
 # -- Load XAML ----------------------------------------------------------
 $xamlPath = Join-Path $PSScriptRoot 'gui\MainWindow.xaml'
@@ -88,7 +91,14 @@ $controls = @(
     'BillingAccessNote', 'BillingAccountsGrid', 'BillingProfilesGrid',
     'InvoiceSectionsGrid', 'EADeptHeader', 'EADeptGrid', 'CostAllocationGrid',
     # Guidance
-    'UnderstandText', 'QuantifyText', 'OptimizeText', 'ReferencesText'
+    'UnderstandText', 'QuantifyText', 'OptimizeText', 'ReferencesText',
+    # Policy
+    'PolicyCountText', 'PolicyComplianceText', 'PolicyNonCompliantText',
+    'PolicyRecsCountText', 'PolicyInventoryGrid', 'PolicyComplianceGrid',
+    'PolicyRecsComplianceText', 'PolicyRecsGrid', 'MissingPolicyButtons',
+    'PolicyDeployPanel', 'PolicyDeployTitle', 'PolicyScopeSelector',
+    'PolicyEffectSelector', 'PolicyDeployButton', 'PolicyDeployCancelButton',
+    'PolicyDeployStatus'
 )
 
 foreach ($name in $controls) {
@@ -115,6 +125,8 @@ $script:scanData = @{
     Orphans       = $null
     Budgets       = $null
     Savings       = $null
+    PolicyInv     = $null
+    PolicyRecs    = $null
 }
 
 ###########################################################################
@@ -129,6 +141,18 @@ function Update-UIStatus {
     [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
         [action]{}, [System.Windows.Threading.DispatcherPriority]::Background
     )
+}
+
+# Lightweight status update for modules to call mid-loop (no progress bar change).
+# Keeps the UI responsive during long per-subscription iterations.
+function Update-ScanStatus {
+    param([string]$Message)
+    if ($script:StatusText) {
+        $script:StatusText.Text = $Message
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+            [action]{}, [System.Windows.Threading.DispatcherPriority]::Background
+        )
+    }
 }
 
 function Get-CurrencySymbol {
@@ -337,14 +361,23 @@ function Populate-TagsTab {
         $script:TagCoverageText.Text  = "$($d.Tags.TagCoverage)%"
         $script:UntaggedCountText.Text = $d.Tags.UntaggedCount.ToString('N0')
 
-        # Inventory grid
+        # Inventory grid - deduplicate tag values (case-insensitive)
         $tagRows = @()
         foreach ($entry in $d.Tags.TagNames.GetEnumerator()) {
-            $values = ($entry.Value.Values | ForEach-Object { $_.Value }) -join ', '
+            $seen = @{}
+            $uniqueValues = @()
+            foreach ($v in $entry.Value.Values) {
+                $key = $v.Value.ToLower()
+                if (-not $seen.ContainsKey($key)) {
+                    $seen[$key] = $true
+                    $uniqueValues += $v.Value
+                }
+            }
+            $values = $uniqueValues -join ', '
             $tagRows += [PSCustomObject]@{
                 'Tag Name'       = $entry.Key
                 'Resources'      = $entry.Value.TotalResources
-                'Unique Values'  = $entry.Value.Values.Count
+                'Unique Values'  = $uniqueValues.Count
                 'Values'         = $values
             }
         }
@@ -774,15 +807,23 @@ function Populate-TrendChart {
         [System.Windows.Controls.Canvas]::SetTop($rect, $y)
         $canvas.Children.Add($rect) | Out-Null
 
-        # Cost label above bar
+        # Cost label above bar (or inside bar if it would clip above canvas)
         $costLabel = [System.Windows.Controls.TextBlock]::new()
         $costLabel.Text = "$currency$($m.Cost.ToString('N0'))"
         $costLabel.FontSize = 10
-        $costLabel.Foreground = [System.Windows.Media.Brushes]::Gray
         $costLabel.TextAlignment = 'Center'
         $costLabel.Width = $barW
+        $labelTop = $y - 16
+        if ($labelTop -lt 0) {
+            # Place label inside the top of the bar with white text
+            $labelTop = $y + 4
+            $costLabel.Foreground = [System.Windows.Media.Brushes]::White
+            $costLabel.FontWeight = 'SemiBold'
+        } else {
+            $costLabel.Foreground = [System.Windows.Media.Brushes]::Gray
+        }
         [System.Windows.Controls.Canvas]::SetLeft($costLabel, $x)
-        [System.Windows.Controls.Canvas]::SetTop($costLabel, [math]::Max($y - 16, 0))
+        [System.Windows.Controls.Canvas]::SetTop($costLabel, $labelTop)
         $canvas.Children.Add($costLabel) | Out-Null
 
         # Month label below bar
@@ -874,6 +915,147 @@ function Populate-MissingTagButtons {
         $tagName = $tag.TagName
         $btn.Add_Click({ Show-TagDeployPanel -TagName $tagName }.GetNewClosure())
         $script:MissingTagButtons.Children.Add($btn) | Out-Null
+    }
+}
+
+#-----------------------------------------------------------------------
+# POLICY TAB POPULATION
+#-----------------------------------------------------------------------
+function Populate-PolicyTab {
+    $d = $script:scanData
+
+    # Summary cards
+    if ($d.PolicyInv) {
+        $script:PolicyCountText.Text      = $d.PolicyInv.AssignmentCount.ToString()
+        $script:PolicyComplianceText.Text  = "$($d.PolicyInv.CompliancePct)%"
+        $script:PolicyNonCompliantText.Text = $d.PolicyInv.TotalNonCompliant.ToString('N0')
+
+        # Assignment inventory grid
+        $invRows = $d.PolicyInv.Assignments | ForEach-Object {
+            [PSCustomObject]@{
+                'Policy Name'     = $_.AssignmentName
+                'Effect'          = $_.Effect
+                'Enforcement'     = $_.EnforcementMode
+                'Origin'          = $_.Origin
+                'Subscription'    = $_.Subscription
+                'Scope'           = if ($_.Scope.Length -gt 60) { '...' + $_.Scope.Substring($_.Scope.Length - 57) } else { $_.Scope }
+            }
+        }
+        $script:PolicyInventoryGrid.ItemsSource = @($invRows)
+
+        # Per-subscription compliance grid
+        $compRows = $d.PolicyInv.ComplianceBySubMap.Values | ForEach-Object {
+            [PSCustomObject]@{
+                'Subscription'    = $_.Subscription
+                'Compliant'       = $_.Compliant
+                'Non-Compliant'   = $_.NonCompliant
+                'Total Evaluated' = $_.TotalResources
+                'Compliance %'    = if (($_.Compliant + $_.NonCompliant) -gt 0) {
+                    [math]::Round(($_.Compliant / ($_.Compliant + $_.NonCompliant)) * 100, 1).ToString() + '%'
+                } else { '-' }
+            }
+        }
+        $script:PolicyComplianceGrid.ItemsSource = @($compRows)
+    }
+
+    # Policy recommendations
+    if ($d.PolicyRecs) {
+        $assignedCount  = $d.PolicyRecs.Assigned.Count
+        $analysisCount  = $d.PolicyRecs.Analysis.Count
+        $script:PolicyRecsCountText.Text = "$assignedCount / $analysisCount"
+        $script:PolicyRecsComplianceText.Text = "FinOps policy coverage: $($d.PolicyRecs.CompliancePct)% ($assignedCount of $analysisCount recommended policies assigned)"
+
+        $recRows = $d.PolicyRecs.Analysis | ForEach-Object {
+            [PSCustomObject]@{
+                'Policy'     = $_.DisplayName
+                'Status'     = $_.Status
+                'Category'   = $_.Category
+                'Priority'   = $_.Priority
+                'Pillar'     = $_.Pillar
+                'Effect'     = $_.DefaultEffect
+                'Purpose'    = $_.Purpose
+            }
+        }
+        $script:PolicyRecsGrid.ItemsSource = @($recRows)
+    }
+}
+
+function Show-PolicyDeployPanel {
+    param(
+        [string]$PolicyDisplayName,
+        [string]$PolicyDefId,
+        [string[]]$AllowedEffects,
+        [string]$DefaultEffect
+    )
+
+    $script:policyDeployCurrentDefId   = $PolicyDefId
+    $script:policyDeployCurrentName    = $PolicyDisplayName
+    $script:PolicyDeployTitle.Text     = "Deploy policy: $PolicyDisplayName"
+    $script:PolicyDeployStatus.Text    = ''
+    $script:PolicyDeployPanel.Visibility = 'Visible'
+
+    # Populate effect selector
+    $script:PolicyEffectSelector.Items.Clear()
+    foreach ($eff in $AllowedEffects) {
+        $script:PolicyEffectSelector.Items.Add($eff) | Out-Null
+    }
+    # Pre-select default
+    $idx = [Array]::IndexOf($AllowedEffects, $DefaultEffect)
+    $script:PolicyEffectSelector.SelectedIndex = if ($idx -ge 0) { $idx } else { 0 }
+
+    # Load scopes lazily (once per scan)
+    if (-not $script:policyDeployScopesLoaded -and $script:scanData.Auth) {
+        $script:PolicyDeployStatus.Text = 'Loading scopes...'
+        [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+            [action]{}, [System.Windows.Threading.DispatcherPriority]::Background
+        )
+        $script:policyDeployScopes = Get-PolicyScopes -Subscriptions $script:scanData.Auth.Subscriptions
+        $script:policyDeployScopesLoaded = $true
+        $script:PolicyDeployStatus.Text = ''
+    }
+
+    $script:PolicyScopeSelector.Items.Clear()
+    foreach ($s in $script:policyDeployScopes) {
+        $script:PolicyScopeSelector.Items.Add($s.DisplayName) | Out-Null
+    }
+    if ($script:policyDeployScopes.Count -gt 0) {
+        $script:PolicyScopeSelector.SelectedIndex = 0
+    }
+}
+
+function Populate-MissingPolicyButtons {
+    $script:MissingPolicyButtons.Children.Clear()
+    if (-not $script:scanData.PolicyRecs) { return }
+
+    $missing = $script:scanData.PolicyRecs.Missing
+    if ($missing.Count -eq 0) {
+        $noMissing = [System.Windows.Controls.TextBlock]::new()
+        $noMissing.Text = 'All recommended FinOps policies are assigned.'
+        $noMissing.FontSize = 12
+        $noMissing.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
+        $script:MissingPolicyButtons.Children.Add($noMissing) | Out-Null
+        return
+    }
+
+    foreach ($pol in $missing) {
+        $btn = [System.Windows.Controls.Button]::new()
+        $btn.Content = "+ $($pol.DisplayName)"
+        $btn.FontSize = 11
+        $btn.Padding = [System.Windows.Thickness]::new(10, 5, 10, 5)
+        $btn.Margin = [System.Windows.Thickness]::new(0, 0, 8, 8)
+        $btn.Cursor = [System.Windows.Input.Cursors]::Hand
+        $btn.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FFF3E0')
+        $btn.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+        $btn.BorderBrush = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+        $btn.BorderThickness = [System.Windows.Thickness]::new(1)
+        $polName   = $pol.DisplayName
+        $polDefId  = $pol.PolicyDefId
+        $polEffects = $pol.AllowedEffects
+        $polDefault = $pol.DefaultEffect
+        $btn.Add_Click({
+            Show-PolicyDeployPanel -PolicyDisplayName $polName -PolicyDefId $polDefId -AllowedEffects $polEffects -DefaultEffect $polDefault
+        }.GetNewClosure())
+        $script:MissingPolicyButtons.Children.Add($btn) | Out-Null
     }
 }
 
@@ -1336,7 +1518,14 @@ $script:scanStages = @(
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }
         $script:scanData.TagRecs = Get-TagRecommendations -ExistingTags $tagNames
     }}
-    @{ Label = 'Querying billing structure...';        Pct = 91;  Action = {
+    @{ Label = 'Scanning policy assignments...';       Pct = 89;  Action = {
+        $script:scanData.PolicyInv = Get-PolicyInventory -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
+    }}
+    @{ Label = 'Analyzing FinOps policy coverage...';  Pct = 90;  Action = {
+        $assignments = if ($script:scanData.PolicyInv) { $script:scanData.PolicyInv.Assignments } else { @() }
+        $script:scanData.PolicyRecs = Get-PolicyRecommendations -ExistingAssignments $assignments
+    }}
+    @{ Label = 'Querying billing structure...';        Pct = 92;  Action = {
         $script:scanData.Billing = Get-BillingStructure
     }}
     @{ Label = 'Building dashboard...';                Pct = 96;  Action = {
@@ -1346,6 +1535,8 @@ $script:scanStages = @(
         try { Populate-AnomalySection }    catch { Write-Warning "Populate-AnomalySection failed: $($_.Exception.Message)" }
         try { Populate-TagsTab }           catch { Write-Warning "Populate-TagsTab failed: $($_.Exception.Message)" }
         try { Populate-MissingTagButtons } catch { Write-Warning "Populate-MissingTagButtons failed: $($_.Exception.Message)" }
+        try { Populate-PolicyTab }         catch { Write-Warning "Populate-PolicyTab failed: $($_.Exception.Message)" }
+        try { Populate-MissingPolicyButtons } catch { Write-Warning "Populate-MissingPolicyButtons failed: $($_.Exception.Message)" }
         try { Populate-CommitmentSection } catch { Write-Warning "Populate-CommitmentSection failed: $($_.Exception.Message)" }
         try { Populate-OrphanedSection }   catch { Write-Warning "Populate-OrphanedSection failed: $($_.Exception.Message)" }
         try { Populate-OptimizationTab }   catch { Write-Warning "Populate-OptimizationTab failed: $($_.Exception.Message)" }
@@ -1354,6 +1545,7 @@ $script:scanStages = @(
         try { Populate-BillingTab }        catch { Write-Warning "Populate-BillingTab failed: $($_.Exception.Message)" }
         try { Populate-GuidanceTab }       catch { Write-Warning "Populate-GuidanceTab failed: $($_.Exception.Message)" }
         $script:tagDeployScopesLoaded = $false   # Reset so scopes reload on next tag deploy
+        $script:policyDeployScopesLoaded = $false  # Reset so scopes reload on next policy deploy
     }}
     @{ Label = 'Scan complete!';                       Pct = 100; Action = {
         $script:ExportButton.IsEnabled = $true
@@ -1430,7 +1622,8 @@ $script:TenantButton.Add_Click({
         $envLabel = $script:scanData.Auth.Environment
         $subCount = $script:scanData.Auth.Subscriptions.Count
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
-        $script:StatusText.Text = "Connected to $envLabel ($subCount subscriptions). Click 'Scan Tenant' to begin."
+        $tenantSize = if ($script:scanData.Auth.TenantSize) { " [$($script:scanData.Auth.TenantSize)]" } else { '' }
+        $script:StatusText.Text = "Connected to $envLabel ($subCount subs$tenantSize). Click 'Scan Tenant' to begin."
         # Show locked after successful selection
         $script:TenantButton.Content = "$($script:LockClosed) Choose Tenant"
     } catch {
@@ -1511,6 +1704,50 @@ $script:TagDeployButton.Add_Click({
 $script:TagDeployCancelButton.Add_Click({
     $script:TagDeployPanel.Visibility = 'Collapsed'
     $script:tagDeployCurrentTag = $null
+})
+
+# Policy Deploy Button
+$script:PolicyDeployButton.Add_Click({
+    $defId       = $script:policyDeployCurrentDefId
+    $displayName = $script:policyDeployCurrentName
+    $effect      = $script:PolicyEffectSelector.SelectedItem
+    $selectedIdx = $script:PolicyScopeSelector.SelectedIndex
+
+    if (-not $defId) {
+        $script:PolicyDeployStatus.Text = 'No policy selected.'
+        return
+    }
+    if (-not $effect) {
+        $script:PolicyDeployStatus.Text = 'Please select an effect.'
+        return
+    }
+    if ($selectedIdx -lt 0 -or $selectedIdx -ge $script:policyDeployScopes.Count) {
+        $script:PolicyDeployStatus.Text = 'Please select a scope.'
+        return
+    }
+
+    $scope = $script:policyDeployScopes[$selectedIdx].Scope
+    $script:PolicyDeployStatus.Text = 'Deploying...'
+    $script:PolicyDeployStatus.Foreground = [System.Windows.Media.Brushes]::Gray
+    [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+        [action]{}, [System.Windows.Threading.DispatcherPriority]::Background
+    )
+
+    $result = Deploy-PolicyAssignment -Scope $scope -PolicyDefinitionId $defId -Effect $effect -DisplayName $displayName
+    if ($result.Success) {
+        $script:PolicyDeployStatus.Text = "Deployed: $displayName ($effect)"
+        $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
+    } else {
+        $script:PolicyDeployStatus.Text = "Failed: $($result.Message)"
+        $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+    }
+})
+
+# Policy Deploy Cancel Button
+$script:PolicyDeployCancelButton.Add_Click({
+    $script:PolicyDeployPanel.Visibility = 'Collapsed'
+    $script:policyDeployCurrentDefId = $null
+    $script:policyDeployCurrentName  = $null
 })
 
 # Tree Selection

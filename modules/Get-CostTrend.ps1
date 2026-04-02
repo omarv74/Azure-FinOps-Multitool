@@ -93,14 +93,30 @@ function Get-CostTrend {
         # Per-subscription fallback
         if (-not $useMgScope -or $months.Count -eq 0) {
             if ($Subscriptions) {
+                $subCount = $Subscriptions.Count
                 $months = [System.Collections.Generic.List[PSCustomObject]]::new()
                 $subTotals = @{}
+
+                # Sample first 3 subs - if all error out, skip the rest
+                $sampleErrors = 0
+                $sampleSize = [math]::Min(3, $subCount)
+
+                $i = 0
                 foreach ($sub in $Subscriptions) {
+                    $i++
+                    if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+                        if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                            Update-ScanStatus "Querying cost trend ($i/$subCount)..."
+                        }
+                    }
                     $subPath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
                     $subResp = Invoke-AzRestMethod -Path $subPath -Method POST -Payload $body -ErrorAction SilentlyContinue
+
+                    $gotSubData = $false
                     if ($subResp.StatusCode -eq 200) {
                         $subResult = ($subResp.Content | ConvertFrom-Json)
                         if ($subResult.properties.rows) {
+                            $gotSubData = $true
                             foreach ($row in $subResult.properties.rows) {
                                 $cost = [math]::Round([double]$row[0], 2)
                                 $dateVal = $row[1].ToString()
@@ -118,6 +134,14 @@ function Get-CostTrend {
                                 $subTotals[$key].Cost += $cost
                             }
                         }
+                    } else {
+                        if ($i -le $sampleSize) { $sampleErrors++ }
+                    }
+
+                    # If all sample subs errored, skip remaining
+                    if ($i -eq $sampleSize -and $sampleErrors -eq $sampleSize -and $subCount -gt $sampleSize) {
+                        Write-Host "  All $sampleSize sample subs returned errors - skipping remaining $($subCount - $sampleSize) subs" -ForegroundColor Yellow
+                        break
                     }
                 }
                 foreach ($entry in $subTotals.GetEnumerator() | Sort-Object Key) {

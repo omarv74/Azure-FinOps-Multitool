@@ -17,13 +17,50 @@ function Get-BudgetStatus {
         [hashtable]$CostData    # Existing cost data keyed by subscription ID
     )
 
-    Write-Host "  Querying budget status..." -ForegroundColor Cyan
+    $subCount = $Subscriptions.Count
+    Write-Host "  Querying budget status ($subCount subs)..." -ForegroundColor Cyan
 
     $budgets = [System.Collections.Generic.List[PSCustomObject]]::new()
     $subsWithBudget = 0
     $subsWithoutBudget = 0
+    $sampled = $false
 
-    foreach ($sub in $Subscriptions) {
+    # -- For large tenants, sample first to see if budgets exist --------
+    $subsToQuery = $Subscriptions
+    if ($subCount -gt 50) {
+        $sampleSize = [math]::Min(10, $subCount)
+        Write-Host "  Large tenant: sampling $sampleSize of $subCount subs for budgets..." -ForegroundColor Yellow
+        $sampleSubs = $Subscriptions | Select-Object -First $sampleSize
+        $sampleHits = 0
+        foreach ($sub in $sampleSubs) {
+            try {
+                $budgetPath = "/subscriptions/$($sub.Id)/providers/Microsoft.Consumption/budgets?api-version=2023-05-01"
+                $resp = Invoke-AzRestMethod -Path $budgetPath -Method GET -ErrorAction SilentlyContinue
+                if ($resp.StatusCode -eq 200) {
+                    $data = ($resp.Content | ConvertFrom-Json)
+                    if ($data.value -and $data.value.Count -gt 0) { $sampleHits++ }
+                }
+            } catch { }
+        }
+
+        if ($sampleHits -eq 0) {
+            Write-Host "  No budgets found in sample of $sampleSize subs - skipping remaining" -ForegroundColor Yellow
+            $sampled = $true
+            $subsWithoutBudget = $subCount
+            $subsToQuery = @()   # Skip the main loop
+        } else {
+            Write-Host "  Budgets found in sample ($sampleHits/$sampleSize), querying all $subCount subs..." -ForegroundColor Cyan
+        }
+    }
+
+    $i = 0
+    foreach ($sub in $subsToQuery) {
+        $i++
+        if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+            if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                Update-ScanStatus "Querying budgets ($i/$subCount)..."
+            }
+        }
         try {
             $budgetPath = "/subscriptions/$($sub.Id)/providers/Microsoft.Consumption/budgets?api-version=2023-05-01"
             $resp = Invoke-AzRestMethod -Path $budgetPath -Method GET -ErrorAction SilentlyContinue
@@ -105,6 +142,7 @@ function Get-BudgetStatus {
         OverBudgetCount     = $overBudget
         AtRiskCount         = $atRisk
         HasData             = ($budgets.Count -gt 0)
+        Sampled             = $sampled
         BudgetCoverage      = if ($Subscriptions.Count -gt 0) {
             [math]::Round(($subsWithBudget / $Subscriptions.Count) * 100, 1)
         } else { 0 }

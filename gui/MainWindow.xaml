@@ -317,6 +317,81 @@
                     </ScrollViewer>
                 </TabItem>
 
+                <!-- Policy Tab ====================================== -->
+                <TabItem Header="  Policy  " FontSize="13">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel x:Name="PolicyPanel">
+
+                            <!-- Policy Summary Cards -->
+                            <WrapPanel Margin="0,10,0,10">
+                                <Border Style="{StaticResource Card}" Width="180">
+                                    <StackPanel>
+                                        <TextBlock Text="Policy Assignments" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="PolicyCountText" Text="&#x2014;" FontSize="22" FontWeight="Bold" Foreground="#0078D4"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Card}" Width="180">
+                                    <StackPanel>
+                                        <TextBlock Text="Compliance" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="PolicyComplianceText" Text="&#x2014;" FontSize="22" FontWeight="Bold" Foreground="#107C10"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Card}" Width="180">
+                                    <StackPanel>
+                                        <TextBlock Text="Non-Compliant Resources" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="PolicyNonCompliantText" Text="&#x2014;" FontSize="22" FontWeight="Bold" Foreground="#D83B01"/>
+                                    </StackPanel>
+                                </Border>
+                                <Border Style="{StaticResource Card}" Width="180">
+                                    <StackPanel>
+                                        <TextBlock Text="FinOps Policies" FontSize="11" Foreground="#999"/>
+                                        <TextBlock x:Name="PolicyRecsCountText" Text="&#x2014;" FontSize="22" FontWeight="Bold" Foreground="#8764B8"/>
+                                    </StackPanel>
+                                </Border>
+                            </WrapPanel>
+
+                            <!-- Policy Inventory -->
+                            <TextBlock Text="Policy Assignment Inventory" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="All policy assignments across your scanned subscriptions." FontSize="11" Foreground="#999" Margin="0,0,0,6"/>
+                            <DataGrid x:Name="PolicyInventoryGrid" MaxHeight="250"/>
+
+                            <!-- Per-Sub Compliance -->
+                            <TextBlock Text="Per-Subscription Compliance" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="Policy compliance summary per subscription from Azure Policy Insights." FontSize="11" Foreground="#999" Margin="0,0,0,6"/>
+                            <DataGrid x:Name="PolicyComplianceGrid" MaxHeight="200"/>
+
+                            <!-- FinOps Policy Recommendations -->
+                            <TextBlock Text="Recommended FinOps Policies (Microsoft Guidance)" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock x:Name="PolicyRecsComplianceText" Text="" FontSize="13" Margin="0,0,0,8"/>
+                            <DataGrid x:Name="PolicyRecsGrid" MaxHeight="250"/>
+
+                            <!-- Deploy Missing Policies -->
+                            <TextBlock Text="Deploy Missing Policies" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="Click a missing policy below to deploy it to a subscription or resource group." FontSize="12" Foreground="#666" Margin="0,0,0,8"/>
+                            <WrapPanel x:Name="MissingPolicyButtons" Margin="0,0,0,12"/>
+
+                            <!-- Policy Deploy Dialog (inline, hidden by default) -->
+                            <Border x:Name="PolicyDeployPanel" Background="#F8F8F8" CornerRadius="4" Padding="16" Margin="0,0,0,10"
+                                    BorderBrush="#0078D4" BorderThickness="1" Visibility="Collapsed">
+                                <StackPanel>
+                                    <TextBlock x:Name="PolicyDeployTitle" Text="" FontSize="14" FontWeight="SemiBold" Foreground="#0078D4" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Scope (subscription or resource group):" FontSize="12" Margin="0,0,0,4"/>
+                                    <ComboBox x:Name="PolicyScopeSelector" Width="500" HorizontalAlignment="Left" FontSize="12" Padding="6,4" Margin="0,0,0,10"/>
+                                    <TextBlock Text="Effect:" FontSize="12" Margin="0,0,0,4"/>
+                                    <ComboBox x:Name="PolicyEffectSelector" Width="200" HorizontalAlignment="Left" FontSize="12" Padding="6,4" Margin="0,0,0,10"/>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="PolicyDeployButton" Content="Deploy Policy" Style="{StaticResource AzureButton}"
+                                                Background="#0078D4" Foreground="White" Margin="0,0,10,0"/>
+                                        <Button x:Name="PolicyDeployCancelButton" Content="Cancel" Style="{StaticResource AzureButton}" Margin="0,0,10,0"/>
+                                        <TextBlock x:Name="PolicyDeployStatus" Text="" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
                 <!-- Optimization Tab ============================== -->
                 <TabItem Header="  Optimization  " FontSize="13">
                     <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">

@@ -16,8 +16,14 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 ### Overview — Cost Summary, Budget Status & Subscription Scorecard
 ![Overview](screenshots/overview.png)
 
+### Cost Analysis — 6-Month Trend, Anomalies & Cost by Tag
+![Cost Analysis](screenshots/cost%20analysis.png)
+
 ### Tags — Inventory & CAF Compliance
 ![Tags](screenshots/tags.png)
+
+### Policy — Azure Policy Inventory, Compliance & FinOps Policy Deployment
+![Policy](screenshots/policy.png)
 
 ### Optimization — Commitments, Orphaned Resources, AHB, RI/SP, Advisor
 ![Optimization](screenshots/optimization.png)
@@ -52,6 +58,9 @@ pillars: **Understand**, **Quantify**, and **Optimize**.
 | **Savings Realized** | Cost Management (ActualCost + AmortizedCost) | Monthly savings from existing RIs, Savings Plans, and AHB |
 | **Scorecard**       | All of the above                  | Per-subscription health: cost, tags, optimizations, budget, trend |
 | **Tag Recs**        | Cloud Adoption Framework baseline | Gap analysis against Microsoft's recommended tag strategy   |
+| **Policy Inventory** | Resource Graph + Policy Insights API | All policy assignments across the tenant with compliance state |
+| **Policy Recs**     | 15 curated FinOps built-in policies | Missing cost/tagging policies with deploy-from-GUI capability |
+| **Policy Deploy**   | ARM Policy Assignment API (PUT)   | Deploy recommended policies with desired effect (Audit/Deny/etc.) |
 | **Billing**         | Billing Accounts/Profiles API     | Billing accounts, profiles, invoice sections, EA depts     |
 | **Cost Allocation** | Cost Management Allocation API    | Existing cost allocation rules with source/target counts   |
 | **FinOps Guidance** | All of the above                  | Pillar-by-pillar maturity assessment with actionable advice |
@@ -95,12 +104,13 @@ cd AzureFinOpsMultitool
 2. Click **Choose Tenant** — a browser login opens; after sign-in, a
    tenant picker dialog lists all accessible tenants
 3. Select a tenant and click **Select**
-4. Click **Scan Tenant** — the tool runs through 18 data-collection
+4. Click **Scan Tenant** — the tool runs through 21 data-collection
    stages with a progress bar
 5. When done, browse the tabs:
    - **Overview** — cost summary cards, savings realized, budget status, subscription cost table, top resources by spend, subscription scorecard
    - **Cost Analysis** -- 6-month cost trend bar chart, cost anomaly flags (25%+ MoM change), pick a tag from the dropdown to see spend by tag value
    - **Tags** -- tag inventory with unique values, coverage %, CAF compliance check, clickable missing tag buttons to deploy tags directly to subscriptions/RGs
+   - **Policy** -- policy assignment inventory, compliance %, 15 recommended FinOps policies, clickable buttons to deploy policies with desired effect
    - **Optimization** -- commitment utilization (RI/SP %), orphaned/idle resources, AHB gaps, RI recs, SP recs, Advisor recs -- each with cost data
    - **Billing** -- billing accounts, billing profiles (MCA), invoice sections, EA departments, cost allocation rules
    - **FinOps Guidance** — pillar-by-pillar assessment with selectable/copyable references
@@ -134,6 +144,9 @@ AzureFinOpsMultitool/
 │   ├── Get-BudgetStatus.ps1             # Budget vs actual per subscription
 │   ├── Get-SavingsRealized.ps1          # Savings from existing RIs, SPs, and AHB
 │   ├── Get-TagRecommendations.ps1       # CAF tag compliance check
+│   ├── Get-PolicyInventory.ps1          # Policy assignments + compliance (Resource Graph → per-sub fallback)
+│   ├── Get-PolicyRecommendations.ps1    # 15 curated FinOps policies gap analysis
+│   ├── Deploy-PolicyAssignment.ps1      # Deploy policy assignments via ARM REST API
 │   └── Get-BillingStructure.ps1         # Billing accounts, profiles, invoice sections, cost allocation
 ├── gui/
 │   └── MainWindow.xaml                  # WPF layout (Azure-themed, virtualized grids, trend chart)
@@ -166,15 +179,22 @@ a `DispatcherTimer` so the UI updates between stages.
 | 14    | Get-BudgetStatus          | REST: Consumption Budgets API (per sub)   | ~3s   |
 | 15    | Get-SavingsRealized       | REST: Cost Management (ActualCost + AmortizedCost) + ARG | ~5s |
 | 16    | Get-TagRecommendations    | Local comparison (no API call)            | <1s   |
-| 17    | Get-BillingStructure      | REST: Billing Accounts/Profiles/Sections  | ~3s   |
+| 17    | Get-PolicyInventory       | Resource Graph + Policy Insights (MG scope) | ~3s |
+| 18    | Get-PolicyRecommendations | Local comparison (no API call)            | <1s   |
+| 19    | Get-BillingStructure      | REST: Billing Accounts/Profiles/Sections  | ~3s   |
 
-> **Performance Note:** Cost queries try management-group scope first
-> (one call for all subs). If MG scope returns a non-200 status (e.g.
-> RBAC), the tool falls back to per-subscription queries. Advisor
-> recommendations use Azure Resource Graph (`advisorresources` table)
-> for a single cross-subscription query instead of per-sub REST calls,
-> with automatic fallback to per-subscription REST if ARG is unavailable.
-> Total scan time is typically 30-60 seconds regardless of subscription count.
+> **Performance Note:** The tool is adaptive — it detects tenant size and
+> optimizes accordingly. Cost queries try management-group scope first
+> (one call for all subs). Policy inventory uses Resource Graph
+> (`policyresources` table) for a single cross-tenant query. Advisor
+> recommendations use `advisorresources` with automatic per-sub REST
+> fallback. For large tenants (50+ subs) where MG-scope fails, the tool
+> uses sample-first strategies: test 3 subs before iterating 300+, skip
+> forecast queries, and short-circuit when data is absent. Budget queries
+> sample 10 subs first — if no budgets exist, remaining subs are skipped.
+> The UI stays responsive during long iterations via inline status updates.
+> **Small tenant (1-10 subs): under 1 minute. Large tenant (300+ subs):
+> 2-5 minutes with MG-scope, 5-10 minutes with per-sub fallback.**
 
 ---
 
@@ -208,6 +228,7 @@ a `DispatcherTimer` so the UI updates between stages.
 | 4-column optimization grids | Each recommendation shows Actual (MTD), Forecast, With-X savings, and Annual Savings |
 | Pure WPF bar chart | Cost trend drawn with Canvas + Rectangles — no NuGet charting libraries needed |
 | Tag deployment via ARM Tags API | PATCH merge preserves existing tags; only adds/updates the target tag |
+| Policy deployment via ARM PUT | Deploy recommended FinOps policies with user-selected effect (Audit/Deny/etc.) |
 | Lazy scope loading for tag deploy | Subscription/RG list fetched on first tag deploy click, cached for session |
 | Billing structure discovery | Queries billing accounts, profiles, invoice sections, EA departments, and cost allocation rules |
 | Commitment utilization tracking | Queries Reservation Summaries + Benefit Utilization APIs to show RI/SP usage % |
@@ -216,6 +237,8 @@ a `DispatcherTimer` so the UI updates between stages.
 | Savings realized calculation | Compares ActualCost vs AmortizedCost by charge type to quantify RI/SP/AHB savings |
 | Cost anomaly flagging | Per-subscription MoM delta computation; flags 25%+ changes for investigation |
 | Subscription scorecard | Composite per-sub view combining cost, tags, optimizations, orphans, budget, trend |
+| Adaptive large-tenant scanning | Sample-first, cross-tag short-circuit, budget sampling, forecast skip for 50+ subs |
+| Resource Graph for policy inventory | `policyresources` table replaces per-sub REST; MG-scope compliance in 1 call |
 
 ---
 
@@ -239,7 +262,7 @@ a `DispatcherTimer` so the UI updates between stages.
 | Advisor tabs empty | Advisor not enabled or no cost recs | Normal for small/new subscriptions |
 | Forecast shows $0.00 | Forecast not available for account type | Common for MCA in first billing period |
 | Resources table shows blue bar only | DataGrid binding issue | Ensure `@()` wrapper on ItemsSource |
-| Scan hangs at 90% | Large tenant with many subscriptions | Advisor now uses Resource Graph; should be fast |
+| Scan hangs at 90% | Large tenant with many subscriptions | Fixed: adaptive sampling skips empty subs; Resource Graph replaces per-sub loops |
 | Gov tenant not detected | No existing Az session | Click Choose Tenant — auto-detects on login |
 | Console shows subscription picker | Az.Accounts 12+ login experience | Fixed — tool sets `AZURE_LOGIN_EXPERIENCE_V2=Off` |
 | Tool stays minimized | Auth error during Connect-AzAccount | Fixed — try/finally ensures window restores |
@@ -248,8 +271,10 @@ a `DispatcherTimer` so the UI updates between stages.
 
 ## Scalability
 
-Tested with tenants from 1 subscription to 76+. Key scalability features:
+Tested with tenants from 1 subscription to 300+. Key scalability features:
 
+- **Adaptive tenant-size detection** — Classifies tenants as Small (1-10),
+  Medium (11-50), or Large (51+) and adjusts scan strategy accordingly
 - **API pagination** — Cost Management `nextLink` followed automatically so
   tenants with 5000+ billed resources get complete data
 - **O(n) collection building** — Uses `List<PSCustomObject>` instead of
@@ -260,14 +285,27 @@ Tested with tenants from 1 subscription to 76+. Key scalability features:
   enabled so WPF only renders visible rows
 - **MG-scope-first queries** — Cost and tag queries try a single MG-scope
   call before falling back to per-subscription loops
-- **Resource Graph for Advisor** — Optimization and RI/SP recommendations
-  use `advisorresources` table (one call across all subs) instead of 2N
-  REST calls, with automatic per-sub REST fallback
+- **Resource Graph everywhere** — Policy inventory, Advisor, RI/SP, tags,
+  AHB, and orphaned resources all use Resource Graph for single cross-tenant
+  calls instead of per-sub REST loops
+- **Sample-first fallback** — When per-sub iteration is required, the tool
+  tests 3 subs first; if all return empty, remaining subs are skipped
+- **Cross-tag short-circuit** — If cost-by-tag returns nothing for the first
+  tag, remaining tags are skipped entirely
+- **Budget sampling** — For 50+ subs, samples 10 subs first; skips remaining
+  if no budgets are configured
+- **Forecast skip for large tenants** — Per-sub forecast API calls (which
+  double the call count) are skipped for 50+ subs; uses CostData ratios instead
+- **Inline UI status updates** — Modules call `Update-ScanStatus` during long
+  loops so the UI shows progress ("Querying costs 25/307...") instead of freezing
 - **MG hierarchy uses pre-loaded subs** — Fallback doesn't re-fetch
   subscriptions, using the list already retrieved during auth
 
-For very large tenants (100+ subscriptions), scan times are typically
-30-60 seconds thanks to cross-subscription Resource Graph queries.
+| Tenant Size | Subs | MG-Scope OK | MG-Scope Fails |
+|-------------|------|-------------|----------------|
+| Small       | 1-10 | < 1 min     | < 1 min        |
+| Medium      | 11-50 | < 1 min    | 1-3 min        |
+| Large       | 51-300+ | 2-3 min  | 5-10 min       |
 
 ---
 
@@ -277,7 +315,7 @@ For very large tenants (100+ subscriptions), scan times are typically
 - [ ] Budget vs. actual comparison per subscription
 - [x] ~~Cost trend chart (last 6 months)~~ — Implemented: WPF Canvas bar chart
 - [ ] Anomaly detection (spike alerts)
-- [ ] Azure Policy compliance overlay
+- [x] ~~Azure Policy compliance overlay~~ — Implemented: Policy tab with inventory, compliance %, 15 FinOps policy recs, deploy from GUI
 - [ ] PDF export with charts
 - [ ] Scheduled scan mode (run headless, email report)
 

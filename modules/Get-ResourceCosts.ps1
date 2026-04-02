@@ -174,7 +174,20 @@ function Get-ResourceCosts {
 
     # -- Strategy 2: Per-subscription fallback (only if MG scope failed) -
     if (-not $gotMgData) {
+    $subCount = $Subscriptions.Count
+    $skipForecast = ($subCount -gt 50)   # For large tenants, skip per-sub forecast to halve API calls
+    if ($skipForecast) {
+        Write-Host "  Large tenant ($subCount subs): skipping per-resource forecast to reduce API calls" -ForegroundColor Yellow
+    }
+
+    $i = 0
     foreach ($sub in $Subscriptions) {
+        $i++
+        if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+            if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                Update-ScanStatus "Querying resource costs ($i/$subCount)..."
+            }
+        }
         $basePath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement"
 
         # -- Actual cost grouped by resource ----------------------------
@@ -253,45 +266,58 @@ function Get-ResourceCosts {
         # -- Forecast: use subscription-level forecast ratio -------------
         # The forecast API does not reliably support ResourceId grouping,
         # so we get the sub-level forecast and distribute proportionally.
+        # For large tenants (50+ subs), skip per-sub forecast API calls
+        # and use CostData ratios if available.
         $subTotalActual = 0
         foreach ($entry in $actualMap.Values) { $subTotalActual += $entry.Actual }
 
         $subForecast = $subTotalActual  # default: same as actual
-        try {
-            $now = Get-Date
-            $monthEnd = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).AddDays(-1)
 
-            $fBody = @{
-                type       = 'ActualCost'
-                timeframe  = 'Custom'
-                timePeriod = @{
-                    from = $now.ToString('yyyy-MM-dd')
-                    to   = $monthEnd.ToString('yyyy-MM-dd')
-                }
-                dataset    = @{
-                    granularity = 'None'
-                    aggregation = @{
-                        totalCost = @{ name = 'Cost'; function = 'Sum' }
-                    }
-                }
-                includeActualCost       = $true
-                includeFreshPartialCost = $false
-            } | ConvertTo-Json -Depth 10
-
-            $fResp = Invoke-AzRestMethod -Path "$basePath/forecast?api-version=2023-11-01" -Method POST -Payload $fBody -ErrorAction Stop
-
-            if ($fResp.StatusCode -eq 200) {
-                $fResult = ($fResp.Content | ConvertFrom-Json)
-                if ($fResult.properties.rows -and $fResult.properties.rows.Count -gt 0) {
-                    $forecastRemaining = 0
-                    foreach ($row in $fResult.properties.rows) {
-                        $forecastRemaining += $row[0]
-                    }
-                    $subForecast = $subTotalActual + [math]::Round($forecastRemaining, 2)
-                }
+        # Use CostData ratio if available (avoids extra API call)
+        if ($CostData -and $CostData.ContainsKey($sub.Id)) {
+            $cd = $CostData[$sub.Id]
+            if ($cd.Forecast -gt $cd.Actual -and $cd.Actual -gt 0) {
+                $subForecast = $subTotalActual * ($cd.Forecast / $cd.Actual)
             }
-        } catch {
-            # Forecast not available for all account types
+        }
+        elseif (-not $skipForecast) {
+            # Only call forecast API for small tenants without CostData
+            try {
+                $now = Get-Date
+                $monthEnd = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).AddDays(-1)
+
+                $fBody = @{
+                    type       = 'ActualCost'
+                    timeframe  = 'Custom'
+                    timePeriod = @{
+                        from = $now.ToString('yyyy-MM-dd')
+                        to   = $monthEnd.ToString('yyyy-MM-dd')
+                    }
+                    dataset    = @{
+                        granularity = 'None'
+                        aggregation = @{
+                            totalCost = @{ name = 'Cost'; function = 'Sum' }
+                        }
+                    }
+                    includeActualCost       = $true
+                    includeFreshPartialCost = $false
+                } | ConvertTo-Json -Depth 10
+
+                $fResp = Invoke-AzRestMethod -Path "$basePath/forecast?api-version=2023-11-01" -Method POST -Payload $fBody -ErrorAction Stop
+
+                if ($fResp.StatusCode -eq 200) {
+                    $fResult = ($fResp.Content | ConvertFrom-Json)
+                    if ($fResult.properties.rows -and $fResult.properties.rows.Count -gt 0) {
+                        $forecastRemaining = 0
+                        foreach ($row in $fResult.properties.rows) {
+                            $forecastRemaining += $row[0]
+                        }
+                        $subForecast = $subTotalActual + [math]::Round($forecastRemaining, 2)
+                    }
+                }
+            } catch {
+                # Forecast not available for all account types
+            }
         }
 
         # Apply forecast ratio proportionally to each resource

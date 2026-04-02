@@ -131,7 +131,20 @@ function Get-CostDataPerSubscription {
     param([object[]]$Subscriptions)
 
     $costMap = @{}
+    $subCount = $Subscriptions.Count
+    $skipForecast = ($subCount -gt 50)   # For large tenants, skip per-sub forecast to halve API calls
+    if ($skipForecast) {
+        Write-Host "  Large tenant ($subCount subs): skipping per-sub forecast to reduce API calls" -ForegroundColor Yellow
+    }
+
+    $i = 0
     foreach ($sub in $Subscriptions) {
+        $i++
+        if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+            if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                Update-ScanStatus "Querying costs ($i/$subCount)..."
+            }
+        }
         try {
             $body = @{
                 type      = 'ActualCost'
@@ -158,37 +171,39 @@ function Get-CostDataPerSubscription {
 
             $costMap[$sub.Id] = @{ Actual = $actual; Forecast = $actual; Currency = $currency }
 
-            # Per-sub forecast
-            try {
-                $now = Get-Date
-                $monthEnd = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).AddDays(-1)
-                $fBody = @{
-                    type       = 'ActualCost'
-                    timeframe  = 'Custom'
-                    timePeriod = @{
-                        from = $now.ToString('yyyy-MM-dd')
-                        to   = $monthEnd.ToString('yyyy-MM-dd')
-                    }
-                    dataset    = @{
-                        granularity = 'None'
-                        aggregation = @{
-                            totalCost = @{ name = 'Cost'; function = 'Sum' }
+            # Per-sub forecast (skipped for large tenants)
+            if (-not $skipForecast) {
+                try {
+                    $now = Get-Date
+                    $monthEnd = (Get-Date -Year $now.Year -Month $now.Month -Day 1).AddMonths(1).AddDays(-1)
+                    $fBody = @{
+                        type       = 'ActualCost'
+                        timeframe  = 'Custom'
+                        timePeriod = @{
+                            from = $now.ToString('yyyy-MM-dd')
+                            to   = $monthEnd.ToString('yyyy-MM-dd')
+                        }
+                        dataset    = @{
+                            granularity = 'None'
+                            aggregation = @{
+                                totalCost = @{ name = 'Cost'; function = 'Sum' }
+                            }
+                        }
+                        includeActualCost       = $true
+                        includeFreshPartialCost = $false
+                    } | ConvertTo-Json -Depth 10
+
+                    $fResp = Invoke-AzRestMethod -Path "$path/forecast?api-version=2023-11-01" -Method POST -Payload $fBody -ErrorAction Stop
+                    if ($fResp.StatusCode -eq 200) {
+                        $fRes = ($fResp.Content | ConvertFrom-Json)
+                        if ($fRes.properties.rows -and $fRes.properties.rows.Count -gt 0) {
+                            $fAmount = [math]::Round($fRes.properties.rows[0][0], 2)
+                            $costMap[$sub.Id].Forecast = $actual + $fAmount
                         }
                     }
-                    includeActualCost       = $true
-                    includeFreshPartialCost = $false
-                } | ConvertTo-Json -Depth 10
-
-                $fResp = Invoke-AzRestMethod -Path "$path/forecast?api-version=2023-11-01" -Method POST -Payload $fBody -ErrorAction Stop
-                if ($fResp.StatusCode -eq 200) {
-                    $fRes = ($fResp.Content | ConvertFrom-Json)
-                    if ($fRes.properties.rows -and $fRes.properties.rows.Count -gt 0) {
-                        $fAmount = [math]::Round($fRes.properties.rows[0][0], 2)
-                        $costMap[$sub.Id].Forecast = $actual + $fAmount
-                    }
+                } catch {
+                    # Forecast not available for all account types
                 }
-            } catch {
-                # Forecast not available for all account types
             }
         } catch {
             Write-Warning "  Cost query failed for $($sub.Name): $($_.Exception.Message)"

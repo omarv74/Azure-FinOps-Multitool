@@ -178,6 +178,17 @@ function Initialize-Scanner {
         Write-Host "  Subscriptions: $($prodSubs.Count) production, $($skippedSubs.Count) skipped (VS/MSDN/DevTest/Free)" -ForegroundColor Yellow
     }
 
+    # Classify tenant size for adaptive scan strategies
+    $tenantSize = if ($prodSubs.Count -le 10) { 'Small' }
+                  elseif ($prodSubs.Count -le 50) { 'Medium' }
+                  else { 'Large' }
+    $sizeNote = switch ($tenantSize) {
+        'Small'  { "fast scan mode" }
+        'Medium' { "standard scan mode" }
+        'Large'  { "optimized scan mode (sampling + Resource Graph)" }
+    }
+    Write-Host "  Tenant size: $tenantSize ($($prodSubs.Count) subs) - $sizeNote" -ForegroundColor Cyan
+
     return [PSCustomObject]@{
         TenantId         = $tenantId
         AccountName      = $accountName
@@ -185,5 +196,6 @@ function Initialize-Scanner {
         AllSubscriptions = $subscriptions
         SkippedSubs      = @($skippedSubs)
         Environment      = $ctx.Environment.Name
+        TenantSize       = $tenantSize
     }
 }

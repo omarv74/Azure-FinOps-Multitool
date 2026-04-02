@@ -99,7 +99,16 @@ function Get-CostByTag {
     # Build both timeframe bodies: MonthToDate first, then TheLastMonth as fallback
     $timeframes = @('MonthToDate', 'TheLastMonth')
 
+    $perSubFailed = $false   # Track if per-sub fallback consistently returns nothing
+
     foreach ($tagName in $tagsToQuery) {
+        # If per-sub fallback already proved fruitless for a prior tag, skip remaining
+        if ($perSubFailed -and -not $useMgScope) {
+            Write-Host "  Skipping cost-by-tag for '$tagName' (per-sub returned no data for prior tags)" -ForegroundColor Yellow
+            $results[$tagName] = @()
+            continue
+        }
+
         try {
             $tagCosts = [System.Collections.Generic.List[PSCustomObject]]::new()
             $gotData  = $false
@@ -146,14 +155,37 @@ function Get-CostByTag {
                 # Per-subscription fallback (also runs if MG scope returned no rows)
                 if ((-not $useMgScope -or -not $gotData) -and $Subscriptions) {
                     $tagCosts = [System.Collections.Generic.List[PSCustomObject]]::new()
-                    foreach ($sub in $Subscriptions) {
+
+                    # Sample first 3 subs - if all return 0, skip the remaining subs
+                    $sampleSize = [math]::Min(3, $Subscriptions.Count)
+                    $sampleHits = 0
+                    for ($i = 0; $i -lt $sampleSize; $i++) {
+                        $sub = $Subscriptions[$i]
                         $subPath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
                         $subResp = Invoke-AzRestMethod -Path $subPath -Method POST -Payload $body -ErrorAction SilentlyContinue
                         if ($subResp.StatusCode -eq 200) {
                             $subRows = Parse-CostRows -ResponseContent $subResp.Content
                             foreach ($r in $subRows) { [void]$tagCosts.Add($r) }
+                            if ($subRows.Count -gt 0) { $sampleHits++ }
                         }
                     }
+
+                    # Only iterate remaining subs if sample found data
+                    if ($sampleHits -gt 0 -and $Subscriptions.Count -gt $sampleSize) {
+                        Write-Host "    Sample found data, querying remaining $($Subscriptions.Count - $sampleSize) subs..." -ForegroundColor Cyan
+                        for ($i = $sampleSize; $i -lt $Subscriptions.Count; $i++) {
+                            $sub = $Subscriptions[$i]
+                            $subPath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+                            $subResp = Invoke-AzRestMethod -Path $subPath -Method POST -Payload $body -ErrorAction SilentlyContinue
+                            if ($subResp.StatusCode -eq 200) {
+                                $subRows = Parse-CostRows -ResponseContent $subResp.Content
+                                foreach ($r in $subRows) { [void]$tagCosts.Add($r) }
+                            }
+                        }
+                    } elseif ($sampleHits -eq 0 -and $Subscriptions.Count -gt $sampleSize) {
+                        Write-Host "    Sample of $sampleSize subs returned 0 rows - skipping remaining subs for $tf" -ForegroundColor Yellow
+                    }
+
                     # Merge duplicate tag values across subs
                     if ($tagCosts.Count -gt 0) {
                         $merged = $tagCosts | Group-Object TagValue | ForEach-Object {
@@ -171,6 +203,11 @@ function Get-CostByTag {
                         Write-Host "    Per-sub fallback returned 0 rows for $tf" -ForegroundColor Yellow
                     }
                 }
+            }
+
+            # If per-sub was used and returned nothing for both timeframes, flag it
+            if (-not $useMgScope -and -not $gotData) {
+                $perSubFailed = $true
             }
 
             $results[$tagName] = $tagCosts | Sort-Object Cost -Descending
