@@ -54,7 +54,6 @@ function Get-PolicyRecommendations {
             Reference    = 'https://learn.microsoft.com/en-us/azure/governance/policy/samples/built-in-policies#tags'
             Parameters   = @(
                 @{ Name = 'tagName';  Label = 'Tag name (e.g. CostCenter)'; Required = $true }
-                @{ Name = 'tagValue'; Label = 'Tag value (leave blank for any value)'; Required = $false }
             )
         }
         [PSCustomObject]@{

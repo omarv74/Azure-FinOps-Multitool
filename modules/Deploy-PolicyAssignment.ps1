@@ -49,12 +49,34 @@ function Deploy-PolicyAssignment {
     Write-Host "  Deploying policy assignment '$assignDisplayName' to scope: $Scope" -ForegroundColor Cyan
     Write-Host "  Effect: $Effect | Definition: $defGuid" -ForegroundColor Cyan
 
-    # Build parameters - always include effect
-    $policyParams = @{
-        effect = @{ value = $Effect }
+    # Query the policy definition to discover which parameters it actually accepts
+    $validParamNames = @()
+    try {
+        $defPath = "$($PolicyDefinitionId)?api-version=2021-06-01"
+        $defResp = Invoke-AzRestMethod -Path $defPath -Method GET -ErrorAction SilentlyContinue
+        if ($defResp.StatusCode -eq 200) {
+            $defObj = $defResp.Content | ConvertFrom-Json -ErrorAction SilentlyContinue
+            if ($defObj.properties.parameters) {
+                $validParamNames = @($defObj.properties.parameters.PSObject.Properties.Name)
+                Write-Host "  Valid parameters: $($validParamNames -join ', ')" -ForegroundColor Gray
+            }
+        }
+    } catch {
+        Write-Host "  Could not query policy definition parameters, sending all." -ForegroundColor Yellow
+    }
+
+    # Build parameters - only include params the definition accepts
+    $policyParams = @{}
+    # Include effect only if the definition has an effect parameter
+    if ($validParamNames.Count -eq 0 -or $validParamNames -contains 'effect') {
+        $policyParams['effect'] = @{ value = $Effect }
     }
     foreach ($key in $AdditionalParameters.Keys) {
-        $policyParams[$key] = @{ value = $AdditionalParameters[$key] }
+        if ($validParamNames.Count -eq 0 -or $validParamNames -contains $key) {
+            $policyParams[$key] = @{ value = $AdditionalParameters[$key] }
+        } else {
+            Write-Host "  Skipping parameter '$key' - not defined in policy definition." -ForegroundColor Yellow
+        }
     }
 
     $body = @{
