@@ -20,15 +20,13 @@ function Get-CostData {
         [string]$TenantId,
 
         [Parameter()]
-        [object[]]$Subscriptions,
-
-        [switch]$SkipMgScope
+        [object[]]$Subscriptions
     )
 
     $costMap = @{}
 
-    # Skip MG-scope if flagged as unsupported for this tenant
-    if ($SkipMgScope) {
+    # Skip MG-scope if a prior module already detected it's unavailable
+    if (-not (Test-MgCostScope)) {
         Write-Host "  Querying actual costs (per-subscription)..." -ForegroundColor Cyan
         return Get-CostDataPerSubscription -Subscriptions $Subscriptions
     }
@@ -51,8 +49,12 @@ function Get-CostData {
         } | ConvertTo-Json -Depth 10
 
         $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
-        $response = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $actualBody -ErrorAction Stop
+        $response = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $actualBody
 
+        if ($response.StatusCode -in @(401, 403)) {
+            Set-MgCostScopeFailed
+            throw "MG-scope cost query returned HTTP $($response.StatusCode). Falling back to per-subscription."
+        }
         if ($response.StatusCode -ne 200) {
             throw "MG-scope cost query returned HTTP $($response.StatusCode). Falling back to per-subscription."
         }
@@ -106,7 +108,7 @@ function Get-CostData {
         } | ConvertTo-Json -Depth 10
 
         $forecastPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/forecast?api-version=2023-11-01"
-        $fResponse = Invoke-AzRestMethod -Path $forecastPath -Method POST -Payload $forecastBody -ErrorAction Stop
+        $fResponse = Invoke-AzRestMethodWithRetry -Path $forecastPath -Method POST -Payload $forecastBody
 
         if ($fResponse.StatusCode -ne 200) {
             throw "Forecast query returned HTTP $($fResponse.StatusCode)"

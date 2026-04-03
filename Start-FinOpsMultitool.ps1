@@ -72,6 +72,20 @@ function Invoke-AzRestMethodWithRetry {
     return $resp  # Return last 429 response if all retries exhausted
 }
 
+# -- Shared MG-Scope State ------------------------------------------------
+# First cost module that gets 401/403 at MG scope sets this to $true.
+# All subsequent modules check it and skip to per-sub immediately.
+$script:MgCostScopeFailed = $false
+
+function Test-MgCostScope {
+    return (-not $script:MgCostScopeFailed)
+}
+
+function Set-MgCostScopeFailed {
+    $script:MgCostScopeFailed = $true
+    Write-Host "  MG-scope cost access unavailable for this tenant - all subsequent modules will use per-subscription queries" -ForegroundColor Yellow
+}
+
 # -- Dot-Source Modules -------------------------------------------------
 $modulePath = Join-Path $PSScriptRoot 'modules'
 . (Join-Path $modulePath 'Initialize-Scanner.ps1')
@@ -2513,6 +2527,7 @@ $script:scanStages = @(
         if (-not $script:scanData.Auth) {
             throw "No tenant selected. Click 'Choose Tenant' first."
         }
+        $script:MgCostScopeFailed = $false  # Reset MG-scope flag for fresh scan
         $envLabel = $script:scanData.Auth.Environment
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
         $script:TenantButton.Content = "$($script:LockClosed) Choose Tenant"
@@ -2524,20 +2539,20 @@ $script:scanStages = @(
         $script:scanData.Contract = Get-ContractInfo -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying cost data...';                Pct = 30;  Action = {
-        $script:scanData.Costs = Get-CostData -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
+        $script:scanData.Costs = Get-CostData -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying resource-level costs...';      Pct = 40;  Action = {
-        $script:scanData.ResourceCosts = Get-ResourceCosts -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs -SkipMgScope
+        $script:scanData.ResourceCosts = Get-ResourceCosts -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs
     }}
     @{ Label = 'Scanning tag inventory...';            Pct = 50;  Action = {
         $script:scanData.Tags = Get-TagInventory -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying cost by tag...';              Pct = 55;  Action = {
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }
-        $script:scanData.CostByTag = Get-CostByTag -TenantId $script:scanData.Auth.TenantId -ExistingTags $tagNames -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
+        $script:scanData.CostByTag = Get-CostByTag -TenantId $script:scanData.Auth.TenantId -ExistingTags $tagNames -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying 6-month cost trend...';       Pct = 60;  Action = {
-        $script:scanData.CostTrend = Get-CostTrend -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
+        $script:scanData.CostTrend = Get-CostTrend -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Scanning AHB opportunities...';        Pct = 64;  Action = {
         $script:scanData.AHB = Get-AHBOpportunities -Subscriptions $script:scanData.Auth.Subscriptions
@@ -2558,7 +2573,7 @@ $script:scanStages = @(
         $script:scanData.Budgets = Get-BudgetStatus -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs
     }}
     @{ Label = 'Calculating savings realized...';      Pct = 86;  Action = {
-        $script:scanData.Savings = Get-SavingsRealized -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
+        $script:scanData.Savings = Get-SavingsRealized -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Analyzing tag compliance...';          Pct = 88;  Action = {
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }

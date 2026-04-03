@@ -14,9 +14,7 @@ function Get-CostTrend {
         [string]$TenantId,
 
         [Parameter()]
-        [object[]]$Subscriptions,
-
-        [switch]$SkipMgScope
+        [object[]]$Subscriptions
     )
 
     Write-Host "  Querying 6-month cost trend..." -ForegroundColor Cyan
@@ -43,7 +41,7 @@ function Get-CostTrend {
 
     $months = [System.Collections.Generic.List[PSCustomObject]]::new()
     $bySubscription = @{}   # key = subId, value = sorted list of month entries
-    $useMgScope = -not $SkipMgScope
+    $useMgScope = Test-MgCostScope
     $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 
     # Helper: parse cost query rows into month entries
@@ -90,13 +88,14 @@ function Get-CostTrend {
     try {
         # Try MG scope for aggregate totals
         if ($useMgScope) {
-            $response = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $body -ErrorAction Stop
+            $response = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $body
             if ($response.StatusCode -eq 200) {
                 $result = ($response.Content | ConvertFrom-Json)
                 if ($result.properties.rows) {
                     $months = Parse-CostRows -Rows $result.properties.rows -Columns $result.properties.columns
                 }
             } else {
+                if ($response.StatusCode -in @(401, 403)) { Set-MgCostScopeFailed }
                 Write-Warning "  MG-scope cost trend returned HTTP $($response.StatusCode) - falling back to per-sub"
                 $useMgScope = $false
             }

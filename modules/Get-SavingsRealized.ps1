@@ -14,9 +14,7 @@ function Get-SavingsRealized {
         [object[]]$Subscriptions,
 
         [Parameter()]
-        [string]$TenantId,
-
-        [switch]$SkipMgScope
+        [string]$TenantId
     )
 
     Write-Host "  Calculating savings already realized..." -ForegroundColor Cyan
@@ -29,7 +27,7 @@ function Get-SavingsRealized {
     $gotMgData = $false
 
     # -- Strategy 1: MG-scope queries (2 API calls instead of N*2) ------
-    if ($TenantId -and -not $SkipMgScope) {
+    if ($TenantId -and (Test-MgCostScope)) {
         try {
             Write-Host "  Calculating savings (MG scope)..." -ForegroundColor Cyan
             $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
@@ -45,7 +43,11 @@ function Get-SavingsRealized {
                 }
             } | ConvertTo-Json -Depth 10
 
-            $actualResp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $actualBody -ErrorAction Stop
+            $actualResp = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $actualBody
+            if ($actualResp.StatusCode -in @(401, 403)) {
+                Set-MgCostScopeFailed
+                throw "MG-scope savings query returned HTTP $($actualResp.StatusCode)"
+            }
             if ($actualResp.StatusCode -eq 200) {
                 $actualResult = ($actualResp.Content | ConvertFrom-Json)
                 if ($actualResult.properties.rows) {
@@ -75,7 +77,7 @@ function Get-SavingsRealized {
                 }
             } | ConvertTo-Json -Depth 10
 
-            $amortResp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $amortBody -ErrorAction Stop
+            $amortResp = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $amortBody
             if ($amortResp.StatusCode -eq 200) {
                 $amortResult = ($amortResp.Content | ConvertFrom-Json)
                 if ($amortResult.properties.rows) {

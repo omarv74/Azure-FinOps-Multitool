@@ -21,9 +21,7 @@ function Get-CostByTag {
         [hashtable]$ExistingTags,
 
         [Parameter()]
-        [object[]]$Subscriptions,
-
-        [switch]$SkipMgScope
+        [object[]]$Subscriptions
     )
 
     # Tags we want to break cost down by (in priority order)
@@ -64,7 +62,7 @@ function Get-CostByTag {
     }
 
     $results = @{}
-    $useMgScope = -not $SkipMgScope
+    $useMgScope = Test-MgCostScope
     $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 
     # Helper: parse Cost Management query response using column headers
@@ -137,8 +135,13 @@ function Get-CostByTag {
                 $tagCosts = [System.Collections.Generic.List[PSCustomObject]]::new()
 
                 if ($useMgScope) {
-                    $response = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $body -ErrorAction Stop
-                    if ($response.StatusCode -ne 200) {
+                    $response = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $body
+                    if ($response.StatusCode -in @(401, 403)) {
+                        Set-MgCostScopeFailed
+                        Write-Warning "  MG-scope cost-by-tag returned HTTP $($response.StatusCode) - falling back to per-subscription"
+                        $useMgScope = $false
+                    }
+                    elseif ($response.StatusCode -ne 200) {
                         Write-Warning "  MG-scope cost-by-tag returned HTTP $($response.StatusCode) - falling back to per-subscription"
                         $useMgScope = $false
                     }

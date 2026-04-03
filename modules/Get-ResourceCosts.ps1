@@ -16,9 +16,7 @@ function Get-ResourceCosts {
         [string]$TenantId,
 
         [Parameter()]
-        [hashtable]$CostData,      # Per-sub cost data for forecast ratio distribution
-
-        [switch]$SkipMgScope
+        [hashtable]$CostData      # Per-sub cost data for forecast ratio distribution
     )
 
     $allRows = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -65,7 +63,7 @@ function Get-ResourceCosts {
     $gotMgData = $false
 
     # -- Strategy 1: MG-scope query (1-10 API calls instead of 300+) ----
-    if ($TenantId -and -not $SkipMgScope) {
+    if ($TenantId -and (Test-MgCostScope)) {
         try {
             Write-Host "  Querying resource costs (MG scope)..." -ForegroundColor Cyan
             $body = @{
@@ -84,7 +82,7 @@ function Get-ResourceCosts {
             } | ConvertTo-Json -Depth 10
 
             $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
-            $resp = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $body -ErrorAction Stop
+            $resp = Invoke-AzRestMethodWithRetry -Path $mgPath -Method POST -Payload $body
 
             if ($resp.StatusCode -eq 200) {
                 $result = ($resp.Content | ConvertFrom-Json)
@@ -167,6 +165,7 @@ function Get-ResourceCosts {
                     }
                 }
             } else {
+                if ($resp.StatusCode -in @(401, 403)) { Set-MgCostScopeFailed }
                 Write-Warning "  MG-scope resource cost query returned HTTP $($resp.StatusCode)"
             }
         } catch {
