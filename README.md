@@ -313,6 +313,7 @@ Tested with tenants from 1 subscription to 300+. Key scalability features:
 - [x] ~~Cost trend chart (last 6 months)~~ — Implemented: WPF Canvas bar chart with per-subscription filter
 - [x] ~~Anomaly detection (spike alerts)~~ — Implemented: 25%+ MoM cost change flagging per subscription
 - [x] ~~Azure Policy compliance overlay~~ — Implemented: Policy tab with inventory, compliance %, 15 FinOps policy recs, deploy from GUI
+- [ ] Implement custom tags
 - [ ] PDF export with charts
 - [ ] Scheduled scan mode (run headless, email report)
 
