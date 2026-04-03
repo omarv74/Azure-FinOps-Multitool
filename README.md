@@ -257,29 +257,6 @@ a `DispatcherTimer` so the UI updates between stages.
 
 ---
 
-## Troubleshooting
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| "Missing required modules" on launch | Az modules not installed | `Install-Module Az.Accounts, Az.Resources, ...` |
-| Cost cards show $0.00 | No Cost Management Reader role | Assign role at MG or subscription scope |
-| Contract type shows dash | No Billing Reader and quotaId fallback failed | Assign Billing Reader (optional — quotaId auto-detects most types) |
-| Cost by Tag shows "no data" | April 1st / early month — no MTD data yet | Tool auto-falls back to last month's data |
-| Tree shows flat list (no MGs) | No Management Group reader access | Assign Reader at tenant root group |
-| Advisor tabs empty | Advisor not enabled or no cost recs | Normal for small/new subscriptions |
-| Forecast shows $0.00 | Forecast not available for account type | Common for MCA in first billing period |
-| Resources table shows blue bar only | DataGrid binding issue | Ensure `@()` wrapper on ItemsSource |
-| Scan hangs at 90% | Large tenant with many subscriptions | Fixed: adaptive sampling skips empty subs; Resource Graph replaces per-sub loops |
-| Tag deploy hangs | ARM PATCH call blocks indefinitely | Fixed: runs in background runspace with 30s timeout; fails gracefully |
-| 429 rate limiting mid-scan | Cost Management API throttles at ~10 req/min | Fixed: automatic retry with exponential backoff; UI stays responsive |
-| Tag coverage shows 0% | Aggregate count queries fail silently | Fixed: uses direct REST API for aggregate counts with detail-count fallback |
-| Policy shows only sub-scoped | MG-inherited policies missing | Fixed: ARM REST API returns all effective assignments including inherited |
-| Gov tenant not detected | No existing Az session | Click Choose Tenant — auto-detects on login |
-| Console shows subscription picker | Az.Accounts 12+ login experience | Fixed — tool sets `AZURE_LOGIN_EXPERIENCE_V2=Off` |
-| Tool stays minimized | Auth error during Connect-AzAccount | Fixed — try/finally ensures window restores |
-
----
-
 ## Scalability
 
 Tested with tenants from 1 subscription to 300+. Key scalability features:
