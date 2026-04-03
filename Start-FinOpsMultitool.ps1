@@ -840,6 +840,12 @@ function Populate-GuidanceTab {
         default { '#D13438' }
     }
 
+    # Store computed score on scan data so Export-ScanReport can reuse it
+    $d | Add-Member -NotePropertyName 'MaturityScore' -NotePropertyValue $score -Force
+    $d | Add-Member -NotePropertyName 'MaturityBreakdown' -NotePropertyValue $breakdown -Force
+    $d | Add-Member -NotePropertyName 'MaturityGrade' -NotePropertyValue $grade -Force
+    $d | Add-Member -NotePropertyName 'MaturityGradeColor' -NotePropertyValue $gradeColor -Force
+
     # =====================================================================
     # RENDER SCORE CARD
     # =====================================================================
@@ -2068,49 +2074,11 @@ function Export-ScanReport {
         $sym = Get-CurrencySymbol -Code $d.ResourceCosts[0].Currency
     }
 
-    # Compute the maturity score (mirrors Populate-GuidanceTab logic)
-    $rptScore = 0; $rptBreakdown = @{}
-    # Visibility (25)
-    $vs = 0
-    if ($d.Tags) { $vs += [math]::Min([math]::Floor($d.Tags.TagCoverage / 10), 10) }
-    if ($d.Costs -and $d.Costs.Count -gt 0) { $vs += 5 }
-    if ($d.CostTrend -and $d.CostTrend.HasData) { $vs += 5 }
-    if ($d.ResourceCosts -and $d.ResourceCosts.Count -gt 0) { $vs += 5 }
-    $rptBreakdown['Visibility'] = [math]::Min($vs, 25); $rptScore += $rptBreakdown['Visibility']
-    # Allocation (20)
-    $as2 = 0
-    if ($d.TagRecs) { $as2 += [math]::Min([math]::Floor($d.TagRecs.CompliancePercent / 12.5), 8) }
-    if ($d.CostByTag -and -not $d.CostByTag.NoTagsFound -and $d.CostByTag.CostByTag.Count -gt 0) { $as2 += 4 }
-    if ($d.Tags -and $d.Tags.TagNames) {
-        $lcK = $d.Tags.TagNames.Keys | ForEach-Object { $_.ToLower() }
-        if ($lcK -contains 'costcenter' -or $lcK -contains 'businessunit' -or $lcK -contains 'department') { $as2 += 4 }
-    }
-    if ($d.Billing -and $d.Billing.CostAllocationRules -and $d.Billing.CostAllocationRules.Count -gt 0) { $as2 += 4 }
-    $rptBreakdown['Allocation'] = [math]::Min($as2, 20); $rptScore += $rptBreakdown['Allocation']
-    # Budgeting (15)
-    $bs2 = 0
-    if ($d.Budgets -and $d.Budgets.HasData) { $bs2 += 5 }
-    if ($d.Budgets) { $bs2 += [math]::Min([math]::Floor($d.Budgets.BudgetCoverage / 20), 5) }
-    if ($d.Budgets -and $d.Budgets.HasData) { if ($d.Budgets.OverBudgetCount -eq 0) { $bs2 += 5 } elseif ($d.Budgets.AtRiskCount -eq 0) { $bs2 += 3 } }
-    $rptBreakdown['Budgeting'] = [math]::Min($bs2, 15); $rptScore += $rptBreakdown['Budgeting']
-    # Optimization (20)
-    $os2 = 0
-    if ($d.Commitments -and $d.Commitments.HasData) { if ($d.Commitments.RIAvgUtilization -ge 80) { $os2 += 5 } elseif ($d.Commitments.RIAvgUtilization -ge 60) { $os2 += 3 } } else { $os2 += 2 }
-    if ($d.Savings -and $d.Savings.TotalMonthly -gt 0) { $os2 += 5 }
-    if ($d.Optimization) { if ($d.Optimization.TotalCount -eq 0) { $os2 += 5 } elseif ($d.Optimization.TotalCount -le 3) { $os2 += 3 } elseif ($d.Optimization.TotalCount -le 10) { $os2 += 1 } } else { $os2 += 2 }
-    if ($d.Orphans) { $oc = if ($d.Orphans.TotalCount) { $d.Orphans.TotalCount } else { 0 }; if ($oc -eq 0) { $os2 += 5 } elseif ($oc -le 5) { $os2 += 3 } elseif ($oc -le 15) { $os2 += 1 } } else { $os2 += 3 }
-    $rptBreakdown['Optimization'] = [math]::Min($os2, 20); $rptScore += $rptBreakdown['Optimization']
-    # Governance (20)
-    $gs2 = 0
-    if ($d.PolicyInv -and $d.PolicyInv.AssignmentCount -gt 0) { $gs2 += 5 }
-    if ($d.PolicyRecs) { $gs2 += [math]::Min([math]::Floor($d.PolicyRecs.CompliancePct / 20), 5) }
-    if ($d.PolicyInv -and $d.PolicyInv.CompliancePct -gt 80) { $gs2 += 5 } elseif ($d.PolicyInv -and $d.PolicyInv.CompliancePct -gt 50) { $gs2 += 3 }
-    if ($d.Hierarchy -and $d.Hierarchy.ManagementGroups -and $d.Hierarchy.ManagementGroups.Count -gt 1) { $gs2 += 5 } elseif ($d.Hierarchy -and $d.Hierarchy.ManagementGroups) { $gs2 += 2 }
-    $rptBreakdown['Governance'] = [math]::Min($gs2, 20); $rptScore += $rptBreakdown['Governance']
-    $rptScore = [math]::Min($rptScore, 100)
-
-    $gradeLabel = if ($rptScore -ge 85) { 'Excellent' } elseif ($rptScore -ge 70) { 'Good' } elseif ($rptScore -ge 50) { 'Developing' } elseif ($rptScore -ge 30) { 'Foundational' } else { 'Getting Started' }
-    $gradeColor = if ($rptScore -ge 85) { '#107C10' } elseif ($rptScore -ge 70) { '#0078D4' } elseif ($rptScore -ge 50) { '#7B2D8E' } elseif ($rptScore -ge 30) { '#D83B01' } else { '#E81123' }
+    # Use pre-computed maturity score from Populate-GuidanceTab
+    $rptScore = if ($d.MaturityScore) { $d.MaturityScore } else { 0 }
+    $rptBreakdown = if ($d.MaturityBreakdown) { $d.MaturityBreakdown } else { @{} }
+    $gradeLabel = if ($d.MaturityGrade) { $d.MaturityGrade } else { 'Getting Started' }
+    $gradeColor = if ($d.MaturityGradeColor) { $d.MaturityGradeColor } else { '#E81123' }
 
     # Total spend
     $totalActual = 0.0; $totalForecast = 0.0
