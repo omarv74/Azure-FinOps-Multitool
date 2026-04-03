@@ -44,7 +44,7 @@ function Deploy-ResourceTag {
 
     # Use Invoke-WebRequest with timeout to prevent indefinite hanging
     # (Invoke-AzRestMethod has no timeout parameter)
-    $token = (Get-AzAccessToken -ResourceUrl 'https://management.azure.com').Token
+    $token = Get-PlainAccessToken
     $headers = @{
         'Authorization' = "Bearer $token"
         'Content-Type'  = 'application/json'

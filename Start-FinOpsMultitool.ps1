@@ -22,6 +22,19 @@ Add-Type -AssemblyName PresentationFramework
 Add-Type -AssemblyName PresentationCore
 Add-Type -AssemblyName WindowsBase
 
+# -- Shared Helper: Get-PlainAccessToken ------------------------------------
+# Get-AzAccessToken returns SecureString in Az.Accounts >= 3.0.
+# This helper always returns a plain-text bearer token string.
+function Get-PlainAccessToken {
+    param([string]$ResourceUrl = 'https://management.azure.com')
+    $tok = (Get-AzAccessToken -ResourceUrl $ResourceUrl).Token
+    if ($tok -is [securestring]) {
+        $bstr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($tok)
+        try   { [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    } else { $tok }
+}
+
 # -- Shared Helper: Invoke-AzRestMethodWithRetry ----------------------------
 # Wraps Invoke-AzRestMethod with automatic retry on HTTP 429 (throttling).
 # Cost Management API rate-limits aggressively; per-sub queries across
@@ -2751,7 +2764,7 @@ $script:TagDeployButton.Add_Click({
 
     # Get bearer token on the main thread (Az context is available here)
     try {
-        $token = (Get-AzAccessToken -ResourceUrl 'https://management.azure.com').Token
+        $token = Get-PlainAccessToken
     } catch {
         $script:TagDeployStatus.Text = "Failed: Could not get access token - $($_.Exception.Message)"
         $script:TagDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
