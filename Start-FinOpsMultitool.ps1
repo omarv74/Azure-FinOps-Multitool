@@ -123,7 +123,18 @@ function Search-AzGraphSafe {
             param($q, $s, $f, $st)
             $p = @{ Query = $q; Subscription = $s; First = $f; ErrorAction = 'Stop' }
             if ($st) { $p['SkipToken'] = $st }
-            Search-AzGraph @p
+            $r = Search-AzGraph @p
+            # Serialize data to JSON inside the runspace to preserve nested
+            # property hierarchy.  Deserialized PSObjects lose navigability
+            # for deep properties like $row.properties.displayName.
+            $json = if ($r.Data -and $r.Data.Count -gt 0) {
+                $r.Data | ConvertTo-Json -Depth 20 -Compress
+            } else { '[]' }
+            [PSCustomObject]@{
+                JsonData  = $json
+                SkipToken = $r.SkipToken
+                Count     = if ($r.Data) { $r.Data.Count } else { 0 }
+            }
         }).AddArgument($Query).AddArgument($Subscription).AddArgument($First).AddArgument($SkipToken)
 
         $asyncResult = $ps.BeginInvoke()
@@ -144,7 +155,22 @@ function Search-AzGraphSafe {
         $is429  = $false
         if ($asyncResult.IsCompleted) {
             try {
-                $result = $ps.EndInvoke($asyncResult)
+                $raw = $ps.EndInvoke($asyncResult)
+                # EndInvoke returns PSDataCollection; unwrap to get our PSCustomObject
+                $wrapper = if ($raw -and $raw.Count -gt 0) { $raw[0] } else { $null }
+                if ($wrapper) {
+                    # Re-hydrate data from JSON to restore nested property hierarchy
+                    $data = if ($wrapper.JsonData -and $wrapper.JsonData -ne '[]') {
+                        $parsed = $wrapper.JsonData | ConvertFrom-Json
+                        # ConvertFrom-Json returns single object if 1 row, wrap in array
+                        if ($parsed -is [array]) { $parsed } else { @($parsed) }
+                    } else { @() }
+                    $result = [PSCustomObject]@{
+                        Data      = $data
+                        SkipToken = $wrapper.SkipToken
+                        Count     = $wrapper.Count
+                    }
+                }
                 # Check for 429 errors in the error stream
                 if ($ps.Streams.Error.Count -gt 0) {
                     $errMsg = $ps.Streams.Error[0].Exception.Message

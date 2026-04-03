@@ -43,8 +43,8 @@ policyresources
         do {
             $pageNum++
             $result = Search-AzGraphSafe -Query $argQuery -Subscription $subIds -First 1000 -SkipToken $skipToken
-            if ($result) {
-                foreach ($r in $result) {
+            if ($result -and $result.Data) {
+                foreach ($r in $result.Data) {
                     $props = $r.properties
                     $defId = $props.policyDefinitionId
 

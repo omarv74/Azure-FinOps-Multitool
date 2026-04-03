@@ -51,7 +51,7 @@ advisorresources
 
         do {
             $result = Search-AzGraphSafe -Query $query -Subscription $subIds -First 1000 -SkipToken $skipToken
-            if ($result) { foreach ($r in $result) { [void]$allRows.Add($r) } }
+            if ($result -and $result.Data) { foreach ($r in $result.Data) { [void]$allRows.Add($r) } }
             $skipToken = if ($result) { $result.SkipToken } else { $null }
         } while ($skipToken)
 
