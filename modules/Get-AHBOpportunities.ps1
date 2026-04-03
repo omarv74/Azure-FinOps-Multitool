@@ -38,8 +38,8 @@ resources
           osType = tostring(properties.storageProfile.imageReference.offer)
 | order by subscriptionId asc, name asc
 "@
-        $result = Search-AzGraph -Query $vmQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        $windowsVMs = @($result.Data)
+        $result = Search-AzGraphSafe -Query $vmQuery -Subscription $subIds -First 1000
+        $windowsVMs = if ($result) { @($result.Data) } else { @() }
     } catch {
         Write-Warning "Windows VM AHB scan failed: $($_.Exception.Message)"
     }
@@ -57,8 +57,8 @@ resources
           sqlEdition = tostring(properties.sqlImageSku)
 | order by subscriptionId asc, name asc
 "@
-        $result = Search-AzGraph -Query $sqlVMQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        $sqlVMs = @($result.Data)
+        $result = Search-AzGraphSafe -Query $sqlVMQuery -Subscription $subIds -First 1000
+        $sqlVMs = if ($result) { @($result.Data) } else { @() }
     } catch {
         Write-Warning "SQL VM AHB scan failed: $($_.Exception.Message)"
     }
@@ -78,8 +78,8 @@ resources
           maxSizeGB = tolong(properties.maxSizeBytes) / 1073741824
 | order by subscriptionId asc, name asc
 "@
-        $result = Search-AzGraph -Query $sqlDBQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        $sqlDBs = @($result.Data)
+        $result = Search-AzGraphSafe -Query $sqlDBQuery -Subscription $subIds -First 1000
+        $sqlDBs = if ($result) { @($result.Data) } else { @() }
     } catch {
         Write-Warning "SQL Database AHB scan failed: $($_.Exception.Message)"
     }

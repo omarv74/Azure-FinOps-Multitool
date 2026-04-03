@@ -99,6 +99,93 @@ function Set-MgCostScopeFailed {
     Write-Host "  MG-scope cost access unavailable for this tenant - all subsequent modules will use per-subscription queries" -ForegroundColor Yellow
 }
 
+# -- Shared Helper: Search-AzGraphSafe ------------------------------------
+# Wraps Search-AzGraph with:
+#   - 60-second timeout via background runspace (prevents indefinite hangs)
+#   - Automatic retry on 429 throttling with DispatcherFrame UI-responsive wait
+#   - Returns $null on timeout so callers can handle gracefully
+function Search-AzGraphSafe {
+    param(
+        [Parameter(Mandatory)][string]$Query,
+        [string[]]$Subscription,
+        [int]$First = 1000,
+        [string]$SkipToken,
+        [int]$TimeoutSeconds = 60,
+        [int]$MaxRetries = 2
+    )
+    for ($attempt = 0; $attempt -le $MaxRetries; $attempt++) {
+        # Build Search-AzGraph in a background runspace so it can be killed on timeout
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript({
+            param($q, $s, $f, $st)
+            $p = @{ Query = $q; Subscription = $s; First = $f; ErrorAction = 'Stop' }
+            if ($st) { $p['SkipToken'] = $st }
+            Search-AzGraph @p
+        }).AddArgument($Query).AddArgument($Subscription).AddArgument($First).AddArgument($SkipToken)
+
+        $asyncResult = $ps.BeginInvoke()
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+
+        # DispatcherFrame loop keeps WPF UI responsive while waiting
+        while (-not $asyncResult.IsCompleted -and (Get-Date) -lt $deadline) {
+            $frame = [System.Windows.Threading.DispatcherFrame]::new()
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+                [System.Windows.Threading.DispatcherPriority]::Background,
+                [action]{ $frame.Continue = $false }
+            )
+            [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+            Start-Sleep -Milliseconds 100
+        }
+
+        $result = $null
+        $is429  = $false
+        if ($asyncResult.IsCompleted) {
+            try {
+                $result = $ps.EndInvoke($asyncResult)
+                # Check for 429 errors in the error stream
+                if ($ps.Streams.Error.Count -gt 0) {
+                    $errMsg = $ps.Streams.Error[0].Exception.Message
+                    if ($errMsg -match '429|throttl|Too Many Requests') { $is429 = $true; $result = $null }
+                    elseif (-not $result) { throw $ps.Streams.Error[0].Exception }
+                }
+            } catch {
+                if ($_.Exception.Message -match '429|throttl|Too Many Requests') { $is429 = $true }
+                else { $ps.Dispose(); $rs.Close(); throw }
+            }
+        } else {
+            $ps.Stop()
+            Write-Warning "  Resource Graph query timed out after $($TimeoutSeconds)s"
+        }
+
+        $ps.Dispose()
+        $rs.Close()
+
+        # If not 429, return whatever we got
+        if (-not $is429) { return $result }
+
+        # 429 retry with DispatcherFrame wait
+        $retryAfter = [math]::Min(10 * [math]::Pow(2, $attempt), 30)
+        Write-Host "  [429 Throttled - Resource Graph] Waiting $($retryAfter)s before retry ($($attempt+1)/$MaxRetries)..." -ForegroundColor Yellow
+        if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+            Update-ScanStatus "Resource Graph rate limited - waiting $($retryAfter)s..."
+        }
+        $waitEnd = (Get-Date).AddSeconds($retryAfter)
+        while ((Get-Date) -lt $waitEnd) {
+            $frame = [System.Windows.Threading.DispatcherFrame]::new()
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+                [System.Windows.Threading.DispatcherPriority]::Background,
+                [action]{ $frame.Continue = $false }
+            )
+            [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+            Start-Sleep -Milliseconds 100
+        }
+    }
+    return $null  # All retries exhausted
+}
+
 # -- Dot-Source Modules -------------------------------------------------
 $modulePath = Join-Path $PSScriptRoot 'modules'
 . (Join-Path $modulePath 'Initialize-Scanner.ps1')

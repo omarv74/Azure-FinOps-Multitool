@@ -218,7 +218,7 @@ resources
 | summarize AHBVMs = count()
 "@
         $subIds = $Subscriptions | ForEach-Object { $_.Id }
-        $ahbResult = Search-AzGraph -Query $ahbQuery -Subscription $subIds -ErrorAction SilentlyContinue
+        $ahbResult = Search-AzGraphSafe -Query $ahbQuery -Subscription $subIds
         if ($ahbResult.Data -and $ahbResult.Data.Count -gt 0) {
             $ahbVMCount = $ahbResult.Data[0].AHBVMs
             # Average D2s v3 Windows license cost is ~$100/mo; AHB saves ~$50/mo per VM

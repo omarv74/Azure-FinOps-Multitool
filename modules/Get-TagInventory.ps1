@@ -36,14 +36,8 @@ resources
         $skipToken = $null
 
         do {
-            $params = @{
-                Query        = $tagQuery
-                Subscription = $subIds
-                First        = 1000
-            }
-            if ($skipToken) { $params['SkipToken'] = $skipToken }
-
-            $result = Search-AzGraph @params -ErrorAction Stop
+            $result = Search-AzGraphSafe -Query $tagQuery -Subscription $subIds -First 1000 -SkipToken $skipToken
+            if (-not $result) { break }
             $allResults += $result.Data
             $skipToken = $result.SkipToken
         } while ($skipToken)
@@ -62,7 +56,7 @@ resources
 | where isnull(tags) or tags == '{}'
 | summarize UntaggedCount = count()
 "@
-        $uResult = Search-AzGraph -Query $untaggedQuery -Subscription $subIds -ErrorAction Stop
+        $uResult = Search-AzGraphSafe -Query $untaggedQuery -Subscription $subIds
         if ($uResult.Data -and $uResult.Data.Count -gt 0) {
             $untaggedCount = $uResult.Data[0].UntaggedCount
         }
@@ -79,7 +73,7 @@ resources
 | order by type asc, name asc
 | take 500
 "@
-        $udResult = Search-AzGraph -Query $untaggedDetailQuery -Subscription $subIds -First 500 -ErrorAction Stop
+        $udResult = Search-AzGraphSafe -Query $untaggedDetailQuery -Subscription $subIds -First 500
         if ($udResult.Data) {
             # Map subscription IDs to names
             $subNameMap = @{}
@@ -102,7 +96,7 @@ resources
     $totalCount = 0
     try {
         $totalQuery = "resources | summarize TotalCount = count()"
-        $tResult = Search-AzGraph -Query $totalQuery -Subscription $subIds -ErrorAction Stop
+        $tResult = Search-AzGraphSafe -Query $totalQuery -Subscription $subIds
         if ($tResult.Data -and $tResult.Data.Count -gt 0) {
             $totalCount = $tResult.Data[0].TotalCount
         }

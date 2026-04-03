@@ -32,8 +32,9 @@ resources
           sku = sku.name, diskState = properties.diskState,
           type = 'Orphaned Disk'
 "@
-        $result = Search-AzGraph -Query $diskQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $diskQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Orphaned Disk'
                 ResourceName   = $r.name
@@ -44,7 +45,7 @@ resources
                 Impact         = 'Medium'
             })
         }
-        Write-Host "    Orphaned disks: $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Orphaned disks: $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Orphaned disk query failed: $($_.Exception.Message)"
     }
@@ -61,8 +62,9 @@ resources
           allocationMethod = properties.publicIPAllocationMethod,
           type = 'Unattached Public IP'
 "@
-        $result = Search-AzGraph -Query $pipQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $pipQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Unattached Public IP'
                 ResourceName   = $r.name
@@ -73,7 +75,7 @@ resources
                 Impact         = if ($r.sku -eq 'Standard') { 'Medium' } else { 'Low' }
             })
         }
-        Write-Host "    Unattached public IPs: $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Unattached public IPs: $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Unattached public IP query failed: $($_.Exception.Message)"
     }
@@ -89,8 +91,9 @@ resources
           enableAcceleratedNetworking = properties.enableAcceleratedNetworking,
           type = 'Unattached NIC'
 "@
-        $result = Search-AzGraph -Query $nicQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $nicQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Unattached NIC'
                 ResourceName   = $r.name
@@ -101,7 +104,7 @@ resources
                 Impact         = 'Low'
             })
         }
-        Write-Host "    Unattached NICs: $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Unattached NICs: $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Unattached NIC query failed: $($_.Exception.Message)"
     }
@@ -118,8 +121,9 @@ resources
           powerState = properties.extended.instanceView.powerState.displayStatus,
           type = 'Deallocated VM'
 "@
-        $result = Search-AzGraph -Query $vmQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $vmQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Deallocated VM'
                 ResourceName   = $r.name
@@ -130,7 +134,7 @@ resources
                 Impact         = 'Medium'
             })
         }
-        Write-Host "    Deallocated VMs: $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Deallocated VMs: $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Deallocated VM query failed: $($_.Exception.Message)"
     }
@@ -147,8 +151,9 @@ resources
           workers = properties.numberOfWorkers,
           type = 'Empty App Service Plan'
 "@
-        $result = Search-AzGraph -Query $aspQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $aspQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Empty App Service Plan'
                 ResourceName   = $r.name
@@ -159,7 +164,7 @@ resources
                 Impact         = 'High'
             })
         }
-        Write-Host "    Empty App Service Plans: $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Empty App Service Plans: $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Empty ASP query failed: $($_.Exception.Message)"
     }
@@ -176,8 +181,9 @@ resources
           timeCreated = properties.timeCreated,
           type = 'Old Snapshot'
 "@
-        $result = Search-AzGraph -Query $snapQuery -Subscription $subIds -First 1000 -ErrorAction Stop
-        foreach ($r in $result.Data) {
+        $result = Search-AzGraphSafe -Query $snapQuery -Subscription $subIds -First 1000
+        $rows = if ($result) { @($result.Data) } else { @() }
+        foreach ($r in $rows) {
             [void]$allOrphans.Add([PSCustomObject]@{
                 Category       = 'Old Snapshot (30d+)'
                 ResourceName   = $r.name
@@ -188,7 +194,7 @@ resources
                 Impact         = 'Low'
             })
         }
-        Write-Host "    Old snapshots (30d+): $($result.Data.Count)" -ForegroundColor Gray
+        Write-Host "    Old snapshots (30d+): $($rows.Count)" -ForegroundColor Gray
     } catch {
         Write-Warning "  Snapshot query failed: $($_.Exception.Message)"
     }

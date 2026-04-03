@@ -45,17 +45,9 @@ advisorresources
         $skipToken = $null
 
         do {
-            $params = @{
-                Query        = $query
-                Subscription = $subIds
-                First        = 1000
-                ErrorAction  = 'Stop'
-            }
-            if ($skipToken) { $params['SkipToken'] = $skipToken }
-
-            $result = Search-AzGraph @params
+            $result = Search-AzGraphSafe -Query $query -Subscription $subIds -First 1000 -SkipToken $skipToken
             if ($result) { foreach ($r in $result) { [void]$allRows.Add($r) } }
-            $skipToken = $result.SkipToken
+            $skipToken = if ($result) { $result.SkipToken } else { $null }
         } while ($skipToken)
 
         Write-Host "  Retrieved $($allRows.Count) Advisor cost recommendations." -ForegroundColor Cyan

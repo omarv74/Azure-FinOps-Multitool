@@ -42,14 +42,7 @@ policyresources
         $pageNum = 0
         do {
             $pageNum++
-            $argParams = @{
-                Query        = $argQuery
-                Subscription = $subIds
-                First        = 1000
-            }
-            if ($skipToken) { $argParams['SkipToken'] = $skipToken }
-
-            $result = Search-AzGraph @argParams -ErrorAction Stop
+            $result = Search-AzGraphSafe -Query $argQuery -Subscription $subIds -First 1000 -SkipToken $skipToken
             if ($result) {
                 foreach ($r in $result) {
                     $props = $r.properties
@@ -105,7 +98,7 @@ policyresources
     by subscriptionId
 "@
         $subIds = $Subscriptions | ForEach-Object { $_.Id }
-        $compResult = Search-AzGraph -Query $compQuery -Subscription $subIds -First 1000 -ErrorAction Stop
+        $compResult = Search-AzGraphSafe -Query $compQuery -Subscription $subIds -First 1000
 
         if ($compResult -and $compResult.Data -and $compResult.Data.Count -gt 0) {
             foreach ($row in $compResult.Data) {
