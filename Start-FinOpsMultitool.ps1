@@ -2473,48 +2473,21 @@ $script:scanStages = @(
     @{ Label = 'Detecting contract type...';           Pct = 25;  Action = {
         $script:scanData.Contract = Get-ContractInfo -Subscriptions $script:scanData.Auth.Subscriptions
     }}
-    @{ Label = 'Probing MG-scope cost access...';      Pct = 28;  Action = {
-        $script:scanData.MgCostScopeSupported = $false
-        try {
-            $probePath = "/providers/Microsoft.Management/managementGroups/$($script:scanData.Auth.TenantId)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
-            $probeBody = (@{
-                type      = 'ActualCost'
-                timeframe = 'MonthToDate'
-                dataset   = @{
-                    granularity = 'None'
-                    aggregation = @{ totalCost = @{ name = 'Cost'; function = 'Sum' } }
-                }
-            } | ConvertTo-Json -Depth 10)
-            $probeResp = Invoke-AzRestMethod -Path $probePath -Method POST -Payload $probeBody -ErrorAction Stop
-            if ($probeResp.StatusCode -eq 200) {
-                $script:scanData.MgCostScopeSupported = $true
-                Write-Host "  MG-scope cost access confirmed" -ForegroundColor Green
-            } else {
-                Write-Host "  MG-scope cost access not available (HTTP $($probeResp.StatusCode)) - using per-subscription queries" -ForegroundColor Yellow
-            }
-        } catch {
-            Write-Host "  MG-scope cost access not available - using per-subscription queries" -ForegroundColor Yellow
-        }
-    }}
     @{ Label = 'Querying cost data...';                Pct = 30;  Action = {
-        $skipMg = -not $script:scanData.MgCostScopeSupported
-        $script:scanData.Costs = Get-CostData -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope:$skipMg
+        $script:scanData.Costs = Get-CostData -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
     }}
     @{ Label = 'Querying resource-level costs...';      Pct = 40;  Action = {
-        $skipMg = -not $script:scanData.MgCostScopeSupported
-        $script:scanData.ResourceCosts = Get-ResourceCosts -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs -SkipMgScope:$skipMg
+        $script:scanData.ResourceCosts = Get-ResourceCosts -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs -SkipMgScope
     }}
     @{ Label = 'Scanning tag inventory...';            Pct = 50;  Action = {
         $script:scanData.Tags = Get-TagInventory -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Querying cost by tag...';              Pct = 55;  Action = {
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }
-        $skipMg = -not $script:scanData.MgCostScopeSupported
-        $script:scanData.CostByTag = Get-CostByTag -TenantId $script:scanData.Auth.TenantId -ExistingTags $tagNames -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope:$skipMg
+        $script:scanData.CostByTag = Get-CostByTag -TenantId $script:scanData.Auth.TenantId -ExistingTags $tagNames -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
     }}
     @{ Label = 'Querying 6-month cost trend...';       Pct = 60;  Action = {
-        $skipMg = -not $script:scanData.MgCostScopeSupported
-        $script:scanData.CostTrend = Get-CostTrend -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope:$skipMg
+        $script:scanData.CostTrend = Get-CostTrend -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
     }}
     @{ Label = 'Scanning AHB opportunities...';        Pct = 64;  Action = {
         $script:scanData.AHB = Get-AHBOpportunities -Subscriptions $script:scanData.Auth.Subscriptions
@@ -2535,8 +2508,7 @@ $script:scanStages = @(
         $script:scanData.Budgets = Get-BudgetStatus -Subscriptions $script:scanData.Auth.Subscriptions -CostData $script:scanData.Costs
     }}
     @{ Label = 'Calculating savings realized...';      Pct = 86;  Action = {
-        $skipMg = -not $script:scanData.MgCostScopeSupported
-        $script:scanData.Savings = Get-SavingsRealized -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope:$skipMg
+        $script:scanData.Savings = Get-SavingsRealized -TenantId $script:scanData.Auth.TenantId -Subscriptions $script:scanData.Auth.Subscriptions -SkipMgScope
     }}
     @{ Label = 'Analyzing tag compliance...';          Pct = 88;  Action = {
         $tagNames = if ($script:scanData.Tags) { $script:scanData.Tags.TagNames } else { @{} }
