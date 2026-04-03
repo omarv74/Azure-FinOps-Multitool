@@ -50,7 +50,21 @@ function Invoke-AzRestMethodWithRetry {
             $retryAfter = [math]::Min(10 * [math]::Pow(2, $attempt), 60)
         }
         Write-Host "  [429 Throttled] Waiting $($retryAfter)s before retry ($($attempt+1)/$MaxRetries)..." -ForegroundColor Yellow
-        Start-Sleep -Seconds $retryAfter
+
+        # Update status bar if available
+        if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+            Update-ScanStatus "Rate limited - waiting $($retryAfter)s before retry ($($attempt+1)/$MaxRetries)..."
+        }
+
+        # Use dispatcher-friendly sleep to keep WPF UI responsive
+        $waitEnd = (Get-Date).AddSeconds($retryAfter)
+        while ((Get-Date) -lt $waitEnd) {
+            # Pump WPF messages so the UI doesn't freeze
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+                [action]{}, [System.Windows.Threading.DispatcherPriority]::Background
+            )
+            Start-Sleep -Milliseconds 250
+        }
     }
     return $resp  # Return last 429 response if all retries exhausted
 }
