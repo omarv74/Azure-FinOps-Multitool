@@ -20,10 +20,18 @@ function Get-CostData {
         [string]$TenantId,
 
         [Parameter()]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [switch]$SkipMgScope
     )
 
     $costMap = @{}
+
+    # Skip MG-scope if flagged as unsupported for this tenant
+    if ($SkipMgScope) {
+        Write-Host "  Querying actual costs (per-subscription)..." -ForegroundColor Cyan
+        return Get-CostDataPerSubscription -Subscriptions $Subscriptions
+    }
 
     # -- Actual Cost (Month-to-Date) ------------------------------------
     try {

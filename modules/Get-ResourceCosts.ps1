@@ -16,7 +16,9 @@ function Get-ResourceCosts {
         [string]$TenantId,
 
         [Parameter()]
-        [hashtable]$CostData      # Per-sub cost data for forecast ratio distribution
+        [hashtable]$CostData,      # Per-sub cost data for forecast ratio distribution
+
+        [switch]$SkipMgScope
     )
 
     $allRows = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -63,7 +65,7 @@ function Get-ResourceCosts {
     $gotMgData = $false
 
     # -- Strategy 1: MG-scope query (1-10 API calls instead of 300+) ----
-    if ($TenantId) {
+    if ($TenantId -and -not $SkipMgScope) {
         try {
             Write-Host "  Querying resource costs (MG scope)..." -ForegroundColor Cyan
             $body = @{

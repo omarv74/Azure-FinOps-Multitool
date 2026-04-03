@@ -14,7 +14,9 @@ function Get-CostTrend {
         [string]$TenantId,
 
         [Parameter()]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [switch]$SkipMgScope
     )
 
     Write-Host "  Querying 6-month cost trend..." -ForegroundColor Cyan
@@ -41,7 +43,7 @@ function Get-CostTrend {
 
     $months = [System.Collections.Generic.List[PSCustomObject]]::new()
     $bySubscription = @{}   # key = subId, value = sorted list of month entries
-    $useMgScope = $true
+    $useMgScope = -not $SkipMgScope
     $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 
     # Helper: parse cost query rows into month entries

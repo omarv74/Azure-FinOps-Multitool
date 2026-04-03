@@ -14,7 +14,9 @@ function Get-SavingsRealized {
         [object[]]$Subscriptions,
 
         [Parameter()]
-        [string]$TenantId
+        [string]$TenantId,
+
+        [switch]$SkipMgScope
     )
 
     Write-Host "  Calculating savings already realized..." -ForegroundColor Cyan
@@ -27,7 +29,7 @@ function Get-SavingsRealized {
     $gotMgData = $false
 
     # -- Strategy 1: MG-scope queries (2 API calls instead of N*2) ------
-    if ($TenantId) {
+    if ($TenantId -and -not $SkipMgScope) {
         try {
             Write-Host "  Calculating savings (MG scope)..." -ForegroundColor Cyan
             $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"

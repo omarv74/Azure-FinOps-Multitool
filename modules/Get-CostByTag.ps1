@@ -21,7 +21,9 @@ function Get-CostByTag {
         [hashtable]$ExistingTags,
 
         [Parameter()]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [switch]$SkipMgScope
     )
 
     # Tags we want to break cost down by (in priority order)
@@ -62,7 +64,7 @@ function Get-CostByTag {
     }
 
     $results = @{}
-    $useMgScope = $true
+    $useMgScope = -not $SkipMgScope
     $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 
     # Helper: parse Cost Management query response using column headers
