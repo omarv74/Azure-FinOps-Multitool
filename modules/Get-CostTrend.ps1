@@ -40,49 +40,59 @@ function Get-CostTrend {
     } | ConvertTo-Json -Depth 10
 
     $months = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $bySubscription = @{}   # key = subId, value = sorted list of month entries
     $useMgScope = $true
     $mgPath = "/providers/Microsoft.Management/managementGroups/$TenantId/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
 
+    # Helper: parse cost query rows into month entries
+    function Parse-CostRows {
+        param($Rows, $Columns)
+        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+        if (-not $Rows) { return $entries }
+
+        $costIdx = -1; $dateIdx = -1; $currIdx = -1
+        if ($Columns) {
+            for ($ci = 0; $ci -lt $Columns.Count; $ci++) {
+                $n = $Columns[$ci].name.ToLower()
+                $t = $Columns[$ci].type.ToLower()
+                if ($n -match 'cost|precost|pretaxcost') { $costIdx = $ci }
+                elseif ($t -eq 'number' -and $costIdx -eq -1) { $costIdx = $ci }
+                elseif ($n -match 'billingmonth|usagedate' -or $t -eq 'datetime') { $dateIdx = $ci }
+                elseif ($n -match 'currency|billingcurrency') { $currIdx = $ci }
+            }
+        }
+        if ($costIdx -eq -1) { $costIdx = 0 }
+        if ($dateIdx -eq -1) { $dateIdx = 1 }
+        if ($currIdx -eq -1) { $currIdx = 2 }
+
+        foreach ($row in $Rows) {
+            $cost = [math]::Round([double]$row[$costIdx], 2)
+            $dateVal = $row[$dateIdx].ToString()
+            $dateClean = $dateVal -replace '[^0-9\-]', ''
+            if ($dateClean.Length -eq 8) {
+                $parsed = [datetime]::ParseExact($dateClean, 'yyyyMMdd', $null)
+            } else {
+                $parsed = [datetime]::Parse($dateVal)
+            }
+            $currency = if ($currIdx -lt $row.Count) { $row[$currIdx] } else { 'USD' }
+            [void]$entries.Add([PSCustomObject]@{
+                Month     = $parsed.ToString('MMM yyyy')
+                MonthDate = $parsed
+                Cost      = $cost
+                Currency  = $currency
+            })
+        }
+        return $entries
+    }
+
     try {
+        # Try MG scope for aggregate totals
         if ($useMgScope) {
             $response = Invoke-AzRestMethod -Path $mgPath -Method POST -Payload $body -ErrorAction Stop
             if ($response.StatusCode -eq 200) {
                 $result = ($response.Content | ConvertFrom-Json)
                 if ($result.properties.rows) {
-                    # Parse using column headers
-                    $cols = $result.properties.columns
-                    $costIdx = -1; $dateIdx = -1; $currIdx = -1
-                    for ($i = 0; $i -lt $cols.Count; $i++) {
-                        $n = $cols[$i].name.ToLower()
-                        $t = $cols[$i].type.ToLower()
-                        if ($n -match 'cost|precost|pretaxcost') { $costIdx = $i }
-                        elseif ($t -eq 'number' -and $costIdx -eq -1) { $costIdx = $i }
-                        elseif ($n -match 'billingmonth|usagedate' -or $t -eq 'datetime') { $dateIdx = $i }
-                        elseif ($n -match 'currency|billingcurrency') { $currIdx = $i }
-                    }
-                    if ($costIdx -eq -1) { $costIdx = 0 }
-                    if ($dateIdx -eq -1) { $dateIdx = 1 }
-                    if ($currIdx -eq -1) { $currIdx = 2 }
-
-                    foreach ($row in $result.properties.rows) {
-                        $cost = [math]::Round([double]$row[$costIdx], 2)
-                        $dateVal = $row[$dateIdx].ToString()
-                        # Cost Management returns dates like 20260101 or 2026-01-01T00:00:00
-                        $dateClean = $dateVal -replace '[^0-9\-]', ''
-                        if ($dateClean.Length -eq 8) {
-                            $parsed = [datetime]::ParseExact($dateClean, 'yyyyMMdd', $null)
-                        } else {
-                            $parsed = [datetime]::Parse($dateVal)
-                        }
-                        $monthLabel = $parsed.ToString('MMM yyyy')
-                        $currency = if ($currIdx -lt $row.Count) { $row[$currIdx] } else { 'USD' }
-                        [void]$months.Add([PSCustomObject]@{
-                            Month    = $monthLabel
-                            MonthDate = $parsed
-                            Cost     = $cost
-                            Currency = $currency
-                        })
-                    }
+                    $months = Parse-CostRows -Rows $result.properties.rows -Columns $result.properties.columns
                 }
             } else {
                 Write-Warning "  MG-scope cost trend returned HTTP $($response.StatusCode) - falling back to per-sub"
@@ -90,61 +100,55 @@ function Get-CostTrend {
             }
         }
 
-        # Per-subscription fallback
-        if (-not $useMgScope -or $months.Count -eq 0) {
-            if ($Subscriptions) {
-                $subCount = $Subscriptions.Count
-                $months = [System.Collections.Generic.List[PSCustomObject]]::new()
-                $subTotals = @{}
+        # Always query per-subscription for the subscription dropdown
+        if ($Subscriptions) {
+            $subCount = $Subscriptions.Count
+            $sampleErrors = 0
+            $sampleSize = [math]::Min(3, $subCount)
+            $aggTotals = @{}  # used for aggregate if MG scope failed
 
-                # Sample first 3 subs - if all error out, skip the rest
-                $sampleErrors = 0
-                $sampleSize = [math]::Min(3, $subCount)
-
-                $i = 0
-                foreach ($sub in $Subscriptions) {
-                    $i++
-                    if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
-                        if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
-                            Update-ScanStatus "Querying cost trend ($i/$subCount)..."
-                        }
-                    }
-                    $subPath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
-                    $subResp = Invoke-AzRestMethod -Path $subPath -Method POST -Payload $body -ErrorAction SilentlyContinue
-
-                    $gotSubData = $false
-                    if ($subResp.StatusCode -eq 200) {
-                        $subResult = ($subResp.Content | ConvertFrom-Json)
-                        if ($subResult.properties.rows) {
-                            $gotSubData = $true
-                            foreach ($row in $subResult.properties.rows) {
-                                $cost = [math]::Round([double]$row[0], 2)
-                                $dateVal = $row[1].ToString()
-                                $dateClean = $dateVal -replace '[^0-9\-]', ''
-                                if ($dateClean.Length -eq 8) {
-                                    $parsed = [datetime]::ParseExact($dateClean, 'yyyyMMdd', $null)
-                                } else {
-                                    $parsed = [datetime]::Parse($dateVal)
-                                }
-                                $key = $parsed.ToString('yyyy-MM')
-                                $currency = if ($row.Count -gt 2) { $row[2] } else { 'USD' }
-                                if (-not $subTotals.ContainsKey($key)) {
-                                    $subTotals[$key] = @{ Cost = 0; Date = $parsed; Currency = $currency }
-                                }
-                                $subTotals[$key].Cost += $cost
-                            }
-                        }
-                    } else {
-                        if ($i -le $sampleSize) { $sampleErrors++ }
-                    }
-
-                    # If all sample subs errored, skip remaining
-                    if ($i -eq $sampleSize -and $sampleErrors -eq $sampleSize -and $subCount -gt $sampleSize) {
-                        Write-Host "  All $sampleSize sample subs returned errors - skipping remaining $($subCount - $sampleSize) subs" -ForegroundColor Yellow
-                        break
+            $i = 0
+            foreach ($sub in $Subscriptions) {
+                $i++
+                if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+                    if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                        Update-ScanStatus "Querying cost trend ($i/$subCount)..."
                     }
                 }
-                foreach ($entry in $subTotals.GetEnumerator() | Sort-Object Key) {
+
+                $subPath = "/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+                $subResp = Invoke-AzRestMethod -Path $subPath -Method POST -Payload $body -ErrorAction SilentlyContinue
+
+                if ($subResp.StatusCode -eq 200) {
+                    $subResult = ($subResp.Content | ConvertFrom-Json)
+                    if ($subResult.properties.rows) {
+                        $subMonths = Parse-CostRows -Rows $subResult.properties.rows -Columns $subResult.properties.columns
+                        $bySubscription[$sub.Id] = @($subMonths | Sort-Object MonthDate)
+
+                        # Build aggregate if MG scope didn't work
+                        if (-not $useMgScope -or $months.Count -eq 0) {
+                            foreach ($sm in $subMonths) {
+                                $key = $sm.MonthDate.ToString('yyyy-MM')
+                                if (-not $aggTotals.ContainsKey($key)) {
+                                    $aggTotals[$key] = @{ Cost = 0; Date = $sm.MonthDate; Currency = $sm.Currency }
+                                }
+                                $aggTotals[$key].Cost += $sm.Cost
+                            }
+                        }
+                    }
+                } else {
+                    if ($i -le $sampleSize) { $sampleErrors++ }
+                }
+
+                if ($i -eq $sampleSize -and $sampleErrors -eq $sampleSize -and $subCount -gt $sampleSize) {
+                    Write-Host "  All $sampleSize sample subs returned errors - skipping remaining $($subCount - $sampleSize) subs" -ForegroundColor Yellow
+                    break
+                }
+            }
+
+            # Use aggregated per-sub data if MG scope had no data
+            if ($months.Count -eq 0 -and $aggTotals.Count -gt 0) {
+                foreach ($entry in $aggTotals.GetEnumerator() | Sort-Object Key) {
                     [void]$months.Add([PSCustomObject]@{
                         Month     = $entry.Value.Date.ToString('MMM yyyy')
                         MonthDate = $entry.Value.Date
@@ -162,7 +166,8 @@ function Get-CostTrend {
     $sorted = @($months | Sort-Object MonthDate)
 
     return [PSCustomObject]@{
-        Months   = $sorted
-        HasData  = ($sorted.Count -gt 0)
+        Months         = $sorted
+        BySubscription = $bySubscription
+        HasData        = ($sorted.Count -gt 0)
     }
 }

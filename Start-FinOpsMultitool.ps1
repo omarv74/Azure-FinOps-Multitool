@@ -68,7 +68,7 @@ $controls = @(
     'ResourceCostGrid',
     'ResourceCountNote',
     # Cost Analysis
-    'TrendChart', 'TrendNote',
+    'TrendChart', 'TrendNote', 'TrendSubSelector',
     'TagSelector', 'CostByTagGrid', 'NoTagsLabel',
     # Tags
     'TagCountText', 'TagCoverageText', 'UntaggedCountText',
@@ -1299,9 +1299,35 @@ function Populate-TrendChart {
         return
     }
 
-    $months  = $d.Months
-    $canvas  = $script:TrendChart
+    # Populate subscription dropdown (only on first call)
+    if ($script:TrendSubSelector.Items.Count -eq 0) {
+        $script:TrendSubSelector.Items.Add('All Subscriptions') | Out-Null
+        if ($d.BySubscription -and $d.BySubscription.Count -gt 0) {
+            foreach ($sub in $script:scanData.Auth.Subscriptions) {
+                if ($d.BySubscription.ContainsKey($sub.Id)) {
+                    $script:TrendSubSelector.Items.Add($sub.Name) | Out-Null
+                }
+            }
+        }
+        $script:TrendSubSelector.SelectedIndex = 0
+    }
+
+    Draw-TrendChart -Months $d.Months
+}
+
+function Draw-TrendChart {
+    param([object[]]$Months)
+
+    $canvas = $script:TrendChart
     $canvas.Children.Clear()
+    $script:TrendNote.Text = ''
+
+    if (-not $Months -or $Months.Count -eq 0) {
+        $script:TrendNote.Text = 'No cost data for selected subscription.'
+        return
+    }
+
+    $months = $Months
 
     $currency = if ($months[0].Currency) { Get-CurrencySymbol -Code $months[0].Currency } else { '$' }
     $maxCost = ($months | Measure-Object -Property Cost -Maximum).Maximum
@@ -1378,6 +1404,26 @@ function Populate-TrendChart {
         $script:TrendNote.Text = ""
     }
 }
+
+# Trend subscription dropdown handler
+$script:TrendSubSelector.Add_SelectionChanged({
+    $d = $script:scanData.CostTrend
+    if (-not $d -or -not $d.HasData) { return }
+
+    $selectedIdx = $script:TrendSubSelector.SelectedIndex
+    if ($selectedIdx -le 0) {
+        # All subscriptions
+        Draw-TrendChart -Months $d.Months
+    } else {
+        $selectedName = $script:TrendSubSelector.SelectedItem
+        $sub = $script:scanData.Auth.Subscriptions | Where-Object { $_.Name -eq $selectedName } | Select-Object -First 1
+        if ($sub -and $d.BySubscription -and $d.BySubscription.ContainsKey($sub.Id)) {
+            Draw-TrendChart -Months $d.BySubscription[$sub.Id]
+        } else {
+            Draw-TrendChart -Months @()
+        }
+    }
+})
 
 #-----------------------------------------------------------------------
 # TAG DEPLOYMENT UI WIRING
@@ -2217,6 +2263,8 @@ footer { margin-top: 40px; padding-top: 15px; border-top: 1px solid #ddd; font-s
     # == 4. COST TREND ==
     [void]$sb.Append('<h2 id="cost-trend">4. 6-Month Cost Trend</h2>')
     if ($d.CostTrend -and $d.CostTrend.HasData -and $d.CostTrend.Months.Count -gt 0) {
+        # Aggregate trend
+        [void]$sb.Append('<h3>All Subscriptions</h3>')
         $months = $d.CostTrend.Months
         $maxCost = ($months | Measure-Object -Property Cost -Maximum).Maximum
         if ($maxCost -le 0) { $maxCost = 1 }
@@ -2227,6 +2275,27 @@ footer { margin-top: 40px; padding-top: 15px; border-top: 1px solid #ddd; font-s
             [void]$sb.Append("<td><div style=`"background:linear-gradient(90deg,#0078D4,#005A9E);height:18px;width:${barW}%;border-radius:3px;min-width:2px;`"></div></td></tr>")
         }
         [void]$sb.Append("</table>")
+
+        # Per-subscription trends
+        if ($d.CostTrend.BySubscription -and $d.CostTrend.BySubscription.Count -gt 0 -and $d.Auth.Subscriptions.Count -gt 1) {
+            foreach ($sub in $d.Auth.Subscriptions) {
+                if ($d.CostTrend.BySubscription.ContainsKey($sub.Id)) {
+                    $subMonths = $d.CostTrend.BySubscription[$sub.Id]
+                    if ($subMonths.Count -gt 0) {
+                        $subMax = ($subMonths | Measure-Object -Property Cost -Maximum).Maximum
+                        if ($subMax -le 0) { $subMax = 1 }
+                        [void]$sb.Append("<h3>$($esc::Escape($sub.Name))</h3>")
+                        [void]$sb.Append("<table><tr><th>Month</th><th class=`"text-right`">Spend</th><th>Bar</th></tr>")
+                        foreach ($sm in $subMonths) {
+                            $bw = [math]::Round(($sm.Cost / $subMax) * 100)
+                            [void]$sb.Append("<tr><td>$($esc::Escape($sm.Month))</td><td class=`"text-right`">$sym$($sm.Cost.ToString('N2'))</td>")
+                            [void]$sb.Append("<td><div style=`"background:linear-gradient(90deg,#2B88D8,#0063B1);height:18px;width:${bw}%;border-radius:3px;min-width:2px;`"></div></td></tr>")
+                        }
+                        [void]$sb.Append("</table>")
+                    }
+                }
+            }
+        }
     } else {
         [void]$sb.Append('<p class="text-muted">No cost trend data available.</p>')
     }

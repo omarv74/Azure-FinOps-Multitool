@@ -232,6 +232,10 @@
 
                             <!-- 6-Month Cost Trend Chart -->
                             <TextBlock Text="6-Month Cost Trend" Style="{StaticResource SectionHeader}"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="Subscription:" FontSize="12" Foreground="#666" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <ComboBox x:Name="TrendSubSelector" Width="350" HorizontalAlignment="Left" FontSize="12" Padding="6,4"/>
+                            </StackPanel>
                             <TextBlock x:Name="TrendNote" Text="" FontSize="11" Foreground="#999" Margin="0,0,0,6"/>
                             <Border Background="White" CornerRadius="4" Padding="12" Margin="0,0,0,20"
                                     BorderBrush="#DDD" BorderThickness="1">
