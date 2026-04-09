@@ -240,9 +240,9 @@ function Get-CostByTag {
                         Write-Host "    Sample of $sampleSize subs returned 0 rows - skipping remaining subs for $tf" -ForegroundColor Yellow
                     }
 
-                    # Merge duplicate tag values across subs
+                    # Merge duplicate tag values across subs (case-sensitive to surface casing inconsistencies)
                     if ($tagCosts.Count -gt 0) {
-                        $merged = $tagCosts | Group-Object TagValue | ForEach-Object {
+                        $merged = $tagCosts | Group-Object TagValue -CaseSensitive | ForEach-Object {
                             [PSCustomObject]@{
                                 TagValue = $_.Name
                                 Cost     = [math]::Round(($_.Group | Measure-Object -Property Cost -Sum).Sum, 2)

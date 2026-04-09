@@ -610,23 +610,15 @@ function Populate-TagsTab {
         $script:TagCoverageText.Text  = "$($d.Tags.TagCoverage)%"
         $script:UntaggedCountText.Text = $d.Tags.UntaggedCount.ToString('N0')
 
-        # Inventory grid - deduplicate tag values (case-insensitive)
+        # Inventory grid - preserve all tag value casing variants for discovery
         $tagRows = @()
         foreach ($entry in $d.Tags.TagNames.GetEnumerator()) {
-            $seen = @{}
-            $uniqueValues = @()
-            foreach ($v in $entry.Value.Values) {
-                $key = $v.Value.ToLower()
-                if (-not $seen.ContainsKey($key)) {
-                    $seen[$key] = $true
-                    $uniqueValues += $v.Value
-                }
-            }
-            $values = $uniqueValues -join ', '
+            $allValues = @($entry.Value.Values | ForEach-Object { $_.Value })
+            $values = $allValues -join ', '
             $tagRows += [PSCustomObject]@{
                 'Tag Name'       = $entry.Key
                 'Resources'      = $entry.Value.TotalResources
-                'Unique Values'  = $uniqueValues.Count
+                'Unique Values'  = $allValues.Count
                 'Values'         = $values
             }
         }
