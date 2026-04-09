@@ -94,14 +94,25 @@ It's designed as the on-ramp — the tool that earns the first conversation, sur
 
 3. **Azure RBAC** — the signed-in account needs:
 
+   **Scanning (read-only):**
+
    | Role                     | Scope             | Why                                  |
    |--------------------------|-------------------|--------------------------------------|
    | **Reader**               | Tenant root or MG | Read management groups + resources   |
    | **Cost Management Reader** | Tenant root or MG | Query cost and forecast data         |
    | **Billing Reader**       | Billing account   | Detect contract type (optional)      |
 
+   **Deploying tags and policies (optional write actions):**
+
+   | Role                     | Scope                  | Why                                  |
+   |--------------------------|------------------------|--------------------------------------|
+   | **Tag Contributor**      | Subscription or RG     | Deploy tags via ARM Tags API         |
+   | **Resource Policy Contributor** | Subscription or MG | Deploy policy assignments (Audit/Deny) |
+   | **Owner** (or Resource Policy Contributor + User Access Administrator) | Subscription or MG | Deploy policies with Modify or DeployIfNotExists effects (requires managed identity role assignment) |
+
    > If some roles are missing, the tool still works — it just skips
-   > the data it can't access and shows warnings.
+   > the data it can't access and shows warnings. Write permissions are
+   > only needed if you click the deploy buttons on the Tags or Policy tabs.
 
 4. **Azure Government** — fully supported. the tool auto-detects
    `AzureCloud` vs `AzureUSGovernment` from your existing session, or
