@@ -6,7 +6,7 @@ single-pane-of-glass view of costs, tagging health, optimization
 opportunities, and FinOps maturity — organized around the three FinOps
 pillars: **Understand**, **Quantify**, and **Optimize**.
 
-The FinOps Multitool is a lightweight, read‑only scanner designed to complement the Microsoft FinOps Toolkit. It does not replace Cost Management, FinOps Hubs, or Power BI starter kits. Instead, it helps practitioners quickly identify gaps, validate assumptions, and accelerate conversations during FinOps workshops and scoping engagements.
+A lightweight, read‑only scanner designed to complement the Microsoft FinOps Toolkit. It does not replace Cost Management, FinOps Hubs, or Power BI starter kits. Instead, it helps practitioners quickly identify gaps, validate assumptions, and accelerate conversations during FinOps workshops and scoping engagements.
 ---
 
 ## Screenshots
@@ -447,7 +447,7 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 
 Built by **Zac Larsen**, Cloud Solution Architect @ Microsoft.
 
-Developed from real-world FinOps customer engagements to solve the gap between "we know we need FinOps" and "we have actionable visibility today." Designed as a complement to the Azure FinOps Toolkit, not a replacement for it.
+Developed from real-world FinOps customer engagements to solve the gap between "we know we need FinOps" and "we have actionable visibility today." Designed as a complement to the Azure FinOps Toolkit.
 
 Questions, feedback, and contributions welcome.
 
