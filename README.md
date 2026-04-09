@@ -35,6 +35,9 @@ The FinOps Multitool is a lightweight, read‑only scanner designed to complemen
 ### FinOps Guidance — Maturity Assessment
 ![FinOps Guidance](screenshots/finops-guidance.png)
 
+### Export Report
+![Export Report](screenshots/report.png)
+
 ---
 
 ## Why This Exists
