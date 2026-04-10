@@ -418,6 +418,27 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 
 ---
 
+## Changelog
+
+### v1.6.0
+- **Tenant-scoped billing** — Billing account queries are now filtered to the selected tenant's subscriptions, ensuring multi-tenant practitioners only see billing data relevant to the current scan
+
+### v1.5.1
+- **Streamlined policy recommendations** — Removed the deprecated "Audit VMs that do not use managed disks" policy, keeping the recommendation list focused on high-impact, modern governance controls
+
+### v1.5.0
+- **Initial public release** — Full 21-stage tenant scan with cost analysis, tag compliance, policy evaluation, optimization recommendations, and FinOps maturity scoring
+- **CAF-aligned tagging** — 7 Cloud Adoption Framework allocation tags with weighted compliance scoring
+- **FinOps Maturity Score** — 0–100 composite score across Visibility, Allocation, Budgeting, Optimization, and Governance
+- **Commitment-aware scanning** — Automatically skips RI/SP savings queries when no active commitments are detected, reducing unnecessary API calls
+- **Dynamic resource threshold** — Intelligent filtering surfaces the most cost-significant resources based on total tenant spend
+- **Multi-cloud support** — Auto-detects Azure Commercial and Azure Government environments
+- **Policy deployment** — Deploy FinOps-aligned Azure Policy assignments directly from the GUI
+- **Tag deployment** — Apply missing tags to resources and resource groups without leaving the tool
+- **HTML & CSV export** — Full scan report export for offline review and stakeholder sharing
+
+---
+
 ## Author
 
 **Zac Larsen** — Personal project (not an official Microsoft product)
