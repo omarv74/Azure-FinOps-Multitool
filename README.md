@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 1.6.0](https://img.shields.io/badge/Version-1.6.0-brightgreen)
+![Version 1.6.1](https://img.shields.io/badge/Version-1.6.1-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -428,6 +428,9 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ---
 
 ## Changelog
+
+### v1.6.1
+- **Smoother first-run experience** — Quick Start now includes `Unblock-File` and `Set-ExecutionPolicy` steps so downloaded ZIP extracts run without the "not digitally signed" error
 
 ### v1.6.0
 - **Tenant-scoped billing** — Billing account queries are now filtered to the selected tenant's subscriptions, ensuring multi-tenant practitioners only see billing data relevant to the current scan
