@@ -27,6 +27,9 @@ function Deploy-PolicyAssignment {
     )
 
     # Input validation
+    if ($Scope -notmatch '^/subscriptions/[a-f0-9-]+') {
+        throw "Invalid scope format. Must start with /subscriptions/{guid}."
+    }
     if ($Effect -notin @('Audit','Deny','Disabled','AuditIfNotExists','DeployIfNotExists','Modify','Append')) {
         throw "Invalid effect: $Effect. Must be one of: Audit, Deny, Disabled, AuditIfNotExists, DeployIfNotExists, Modify, Append"
     }

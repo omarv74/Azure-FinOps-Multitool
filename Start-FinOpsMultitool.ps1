@@ -4167,10 +4167,13 @@ $script:TagDeployButton.Add_Click({
             # If mass mode, find individual resources via Resource Graph (with pagination)
             if ($massMode -and $subscriptionId) {
                 try {
-                    if ($valueFilter) {
-                        $query = "resources | where tags['$deployTagName'] == '$valueFilter' | project id"
+                    # Escape single quotes to prevent KQL injection
+                    $safeTagName = $deployTagName -replace "'", "\\'"
+                    $safeValueFilter = if ($valueFilter) { $valueFilter -replace "'", "\\'" } else { $null }
+                    if ($safeValueFilter) {
+                        $query = "resources | where tags['$safeTagName'] == '$safeValueFilter' | project id"
                     } else {
-                        $query = "resources | where isnotnull(tags['$deployTagName']) | project id"
+                        $query = "resources | where isnotnull(tags['$safeTagName']) | project id"
                     }
                     $skipToken = $null
                     do {

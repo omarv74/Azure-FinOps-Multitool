@@ -21,6 +21,9 @@ function Deploy-ResourceTag {
     )
 
     # Input validation
+    if ($Scope -notmatch '^/subscriptions/[a-f0-9-]+') {
+        throw "Invalid scope format. Must start with /subscriptions/{guid}."
+    }
     if ($TagName -match '[<>&''"\\]') {
         throw "Tag name contains invalid characters."
     }
@@ -83,10 +86,11 @@ function Deploy-ResourceTag {
                 if ($errBody.error) { $errMsg = $errBody.error.message }
             } catch {}
         }
-        Write-Warning "    Tag deployment failed: $errMsg"
+        $safeMsg = $errMsg -replace 'Bearer [^\s]+', 'Bearer ***REDACTED***'
+        Write-Warning "    Tag deployment failed: $safeMsg"
         return [PSCustomObject]@{
             Success    = $false
-            Message    = $errMsg
+            Message    = $safeMsg
             StatusCode = $statusCode
         }
     }
@@ -105,6 +109,11 @@ function Remove-ResourceTag {
         [Parameter(Mandatory)]
         [string]$TagName
     )
+
+    # Input validation
+    if ($Scope -notmatch '^/subscriptions/[a-f0-9-]+') {
+        throw "Invalid scope format. Must start with /subscriptions/{guid}."
+    }
 
     Write-Host "  Removing tag '$TagName' from scope: $Scope" -ForegroundColor Cyan
 
