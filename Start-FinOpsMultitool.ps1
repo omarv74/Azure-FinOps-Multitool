@@ -1957,10 +1957,18 @@ function Populate-PolicyTab {
             $idx = [int]$sender.Tag
             $assignment = $script:scanData.PolicyInv.Assignments[$idx]
             $displayName = $assignment.AssignmentName
-            $assignmentId = $assignment.AssignmentId
+            $policyDefId = $assignment.PolicyDefId
+
+            # Find ALL assignments with the same PolicyDefId (same policy assigned multiple times)
+            $matchingAssignments = @($script:scanData.PolicyInv.Assignments | Where-Object {
+                $_.PolicyDefId -and $policyDefId -and $_.PolicyDefId.ToLower() -eq $policyDefId.ToLower()
+            })
+
+            $matchCount = $matchingAssignments.Count
+            $statusLabel = if ($matchCount -gt 1) { "Removing $matchCount assignments of this policy..." } else { "Removing assignment..." }
 
             $script:PolicyDeployTitle.Text = "Unassign: $displayName"
-            $script:PolicyDeployStatus.Text = "Removing assignment..."
+            $script:PolicyDeployStatus.Text = $statusLabel
             $script:PolicyDeployStatus.Foreground = [System.Windows.Media.Brushes]::Gray
             $script:PolicyDeployPanel.Visibility = 'Visible'
             $script:PolicyScopeSelector.Visibility = 'Collapsed'
@@ -1979,19 +1987,32 @@ function Populate-PolicyTab {
             [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
                 [System.Windows.Threading.DispatcherPriority]::Render, [action]{})
 
-            try {
-                $result = Remove-PolicyAssignment -AssignmentId $assignmentId
-                if ($result.Success) {
-                    $script:PolicyDeployStatus.Text = "Unassigned: $displayName"
-                    $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
-                    $sender.Content = 'Removed'
-                    $sender.IsEnabled = $false
-                } else {
-                    $script:PolicyDeployStatus.Text = "Failed: $($result.Message)"
-                    $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+            $successCount = 0
+            $failMsg = ''
+            foreach ($ma in $matchingAssignments) {
+                try {
+                    $result = Remove-PolicyAssignment -AssignmentId $ma.AssignmentId
+                    if ($result.Success) {
+                        $successCount++
+                    } else {
+                        $failMsg = $result.Message
+                    }
+                } catch {
+                    $failMsg = $_.Exception.Message
                 }
-            } catch {
-                $script:PolicyDeployStatus.Text = "Error: $($_.Exception.Message)"
+            }
+
+            if ($successCount -eq $matchCount) {
+                $script:PolicyDeployStatus.Text = "Unassigned: $displayName ($successCount assignment(s) removed)"
+                $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
+                # Disable all matching buttons in the grid
+                $sender.Content = 'Removed'
+                $sender.IsEnabled = $false
+            } elseif ($successCount -gt 0) {
+                $script:PolicyDeployStatus.Text = "Partial: $successCount of $matchCount removed. Error: $failMsg"
+                $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+            } else {
+                $script:PolicyDeployStatus.Text = "Failed: $failMsg"
                 $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
             }
             $script:PolicyDeployButton.Visibility = 'Visible'

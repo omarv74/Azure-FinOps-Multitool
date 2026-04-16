@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 1.9.4](https://img.shields.io/badge/Version-1.9.4-brightgreen)
+![Version 1.9.5](https://img.shields.io/badge/Version-1.9.5-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -453,6 +453,9 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ---
 
 ## Changelog
+
+### v1.9.5
+- **Mass policy unassign** — clicking Unassign on any policy in the inventory grid now removes ALL assignments of that same policy (matching by definition ID), not just the single row
 
 ### v1.9.4
 - **Mass tag removal** — scope selector now shows "[ALL] Sub + all RGs" entries in remove mode; removes the tag from the subscription and every resource group in one click
