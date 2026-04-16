@@ -1910,10 +1910,86 @@ function Populate-PolicyTab {
         $script:PolicyComplianceText.Text  = "$($d.PolicyInv.CompliancePct)%"
         $script:PolicyNonCompliantText.Text = $d.PolicyInv.TotalNonCompliant.ToString('N0')
 
-        # Assignment inventory grid
+        # Assignment inventory grid with inline Unassign button
+        $script:PolicyInventoryGrid.AutoGenerateColumns = $false
+        $script:PolicyInventoryGrid.Columns.Clear()
+
+        foreach ($col in @('Assignment Name','Type','Effect','Enforcement','Origin','Subscription','Scope')) {
+            $dgCol = [System.Windows.Controls.DataGridTextColumn]::new()
+            $dgCol.Header = $col
+            $dgCol.Binding = [System.Windows.Data.Binding]::new($col)
+            if ($col -eq 'Scope') { $dgCol.Width = [System.Windows.Controls.DataGridLength]::new(1, [System.Windows.Controls.DataGridLengthUnitType]::Star) }
+            $script:PolicyInventoryGrid.Columns.Add($dgCol)
+        }
+
+        # Unassign button template column
+        $actionCol = [System.Windows.Controls.DataGridTemplateColumn]::new()
+        $actionCol.Header = 'Action'
+        $actionCol.Width = 90
+
+        $cellFactory = [System.Windows.FrameworkElementFactory]::new([System.Windows.Controls.Button])
+        $cellFactory.SetValue([System.Windows.Controls.Button]::ContentProperty, 'Unassign')
+        $cellFactory.SetBinding([System.Windows.Controls.Button]::TagProperty, [System.Windows.Data.Binding]::new('AssignmentIndex'))
+        $cellFactory.SetValue([System.Windows.Controls.Button]::FontSizeProperty, [double]11)
+        $cellFactory.SetValue([System.Windows.Controls.Button]::PaddingProperty, [System.Windows.Thickness]::new(8,3,8,3))
+        $cellFactory.SetValue([System.Windows.Controls.Button]::CursorProperty, [System.Windows.Input.Cursors]::Hand)
+        $cellFactory.SetValue([System.Windows.Controls.Button]::BackgroundProperty, [System.Windows.Media.BrushConverter]::new().ConvertFromString('#FDE7E9'))
+        $cellFactory.SetValue([System.Windows.Controls.Button]::ForegroundProperty, [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D13438'))
+        $cellFactory.SetValue([System.Windows.Controls.Button]::BorderThicknessProperty, [System.Windows.Thickness]::new(1))
+        $cellFactory.AddHandler([System.Windows.Controls.Button]::ClickEvent, [System.Windows.RoutedEventHandler]{
+            param($sender, $e)
+            $idx = [int]$sender.Tag
+            $assignment = $script:scanData.PolicyInv.Assignments[$idx]
+            $displayName = $assignment.AssignmentName
+            $assignmentId = $assignment.AssignmentId
+
+            $script:PolicyDeployTitle.Text = "Unassign: $displayName"
+            $script:PolicyDeployStatus.Text = "Removing assignment..."
+            $script:PolicyDeployStatus.Foreground = [System.Windows.Media.Brushes]::Gray
+            $script:PolicyDeployPanel.Visibility = 'Visible'
+            $script:PolicyScopeSelector.Visibility = 'Collapsed'
+            $script:PolicyEffectSelector.Visibility = 'Collapsed'
+            $script:PolicyParamsPanel.Visibility = 'Collapsed'
+            $script:PolicyRemediateButton.Visibility = 'Collapsed'
+            foreach ($ctrl in @($script:PolicyScopeSelector, $script:PolicyEffectSelector)) {
+                $parent = $ctrl.Parent
+                if ($parent) {
+                    $ctrlIdx = $parent.Children.IndexOf($ctrl)
+                    if ($ctrlIdx -gt 0) { $parent.Children[$ctrlIdx - 1].Visibility = 'Collapsed' }
+                }
+            }
+            $script:PolicyDeployButton.Visibility = 'Collapsed'
+
+            [System.Windows.Threading.Dispatcher]::CurrentDispatcher.Invoke(
+                [System.Windows.Threading.DispatcherPriority]::Render, [action]{})
+
+            try {
+                $result = Remove-PolicyAssignment -AssignmentId $assignmentId
+                if ($result.Success) {
+                    $script:PolicyDeployStatus.Text = "Unassigned: $displayName"
+                    $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
+                    $sender.Content = 'Removed'
+                    $sender.IsEnabled = $false
+                } else {
+                    $script:PolicyDeployStatus.Text = "Failed: $($result.Message)"
+                    $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+                }
+            } catch {
+                $script:PolicyDeployStatus.Text = "Error: $($_.Exception.Message)"
+                $script:PolicyDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
+            }
+            $script:PolicyDeployButton.Visibility = 'Visible'
+        })
+
+        $cellTemplate = [System.Windows.DataTemplate]::new()
+        $cellTemplate.VisualTree = $cellFactory
+        $actionCol.CellTemplate = $cellTemplate
+        $script:PolicyInventoryGrid.Columns.Add($actionCol)
+
+        $idx = 0
         $invRows = $d.PolicyInv.Assignments | ForEach-Object {
             $type = if ($_.PolicyDefId -match '/policySetDefinitions/') { 'Initiative' } else { 'Policy' }
-            [PSCustomObject]@{
+            $row = [PSCustomObject]@{
                 'Assignment Name' = $_.AssignmentName
                 'Type'            = $type
                 'Effect'          = $_.Effect
@@ -1921,7 +1997,10 @@ function Populate-PolicyTab {
                 'Origin'          = $_.Origin
                 'Subscription'    = $_.Subscription
                 'Scope'           = if ($_.Scope.Length -gt 60) { '...' + $_.Scope.Substring($_.Scope.Length - 57) } else { $_.Scope }
+                'AssignmentIndex' = $idx
             }
+            $idx++
+            $row
         }
         $script:PolicyInventoryGrid.ItemsSource = @($invRows)
 
