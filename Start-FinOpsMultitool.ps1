@@ -563,7 +563,6 @@ function Populate-OverviewTab {
             'Actual (MTD)'       = $c.Actual.ToString('N2')
             'Forecast'           = $c.Forecast.ToString('N2')
             '% of Total'         = "$pct%"
-            'Orphan Savings/mo'  = if ($orphanSave -gt 0) { "$sym$([math]::Round($orphanSave, 2).ToString('N2'))" } else { '-' }
             Currency             = $c.Currency
         })
     }
