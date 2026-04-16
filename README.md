@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 1.9.17](https://img.shields.io/badge/Version-1.9.17-brightgreen)
+![Version 1.9.18](https://img.shields.io/badge/Version-1.9.18-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -453,6 +453,9 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ---
 
 ## Changelog
+
+### v1.9.18
+- **Fix tag removal for variants** — Remove button on Tag Recommendations now deletes the actual tag name found in Azure (e.g. `Application` instead of the recommended `ApplicationName`), resolving the issue where removal reported success but tags remained
 
 ### v1.9.17
 - **Custom window icon** — app now shows an Azure cloud icon in the title bar and taskbar instead of the default PowerShell icon

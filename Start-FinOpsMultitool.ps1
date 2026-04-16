@@ -722,7 +722,7 @@ function Populate-TagsTab {
         $cellFactory.SetBinding([System.Windows.Controls.Button]::ContentProperty, [System.Windows.Data.Binding]::new('ActionLabel'))
         $cellFactory.SetBinding([System.Windows.Controls.Button]::BackgroundProperty, [System.Windows.Data.Binding]::new('ActionBg'))
         $cellFactory.SetBinding([System.Windows.Controls.Button]::ForegroundProperty, [System.Windows.Data.Binding]::new('ActionFg'))
-        $cellFactory.SetBinding([System.Windows.Controls.Button]::TagProperty, [System.Windows.Data.Binding]::new('TagName'))
+        $cellFactory.SetBinding([System.Windows.Controls.Button]::TagProperty, [System.Windows.Data.Binding]::new('ActionTagName'))
         $cellFactory.SetValue([System.Windows.Controls.Button]::FontSizeProperty, [double]10)
         $cellFactory.SetValue([System.Windows.Controls.Button]::PaddingProperty, [System.Windows.Thickness]::new(6,1,6,1))
         $cellFactory.SetValue([System.Windows.Controls.Button]::MarginProperty, [System.Windows.Thickness]::new(2,1,2,1))
@@ -748,17 +748,21 @@ function Populate-TagsTab {
         $brushConv = [System.Windows.Media.BrushConverter]::new()
         $recRows = $d.TagRecs.Analysis | ForEach-Object {
             $isMissing = $_.Status -eq 'Missing'
+            # For Remove: use the actual tag name found in Azure (handles variations + correct case)
+            # For Add: use the recommended tag name
+            $actionTag = if ($isMissing) { $_.TagName } elseif ($_.ActualTagName) { $_.ActualTagName } else { $_.TagName }
             [PSCustomObject]@{
-                'Tag'         = $_.TagName
-                'TagName'     = $_.TagName
-                'Status'      = $_.Status
-                'Location'    = $_.Location
-                'Priority'    = $_.Priority
-                'Pillar'      = $_.Pillar
-                'Purpose'     = $_.Purpose
-                'ActionLabel' = if ($isMissing) { 'Add' } else { 'Remove' }
-                'ActionBg'    = if ($isMissing) { $brushConv.ConvertFromString('#DFF6DD') } else { $brushConv.ConvertFromString('#FDE7E9') }
-                'ActionFg'    = if ($isMissing) { $brushConv.ConvertFromString('#107C10') } else { $brushConv.ConvertFromString('#D13438') }
+                'Tag'           = $_.TagName
+                'TagName'       = $_.TagName
+                'ActionTagName' = $actionTag
+                'Status'        = $_.Status
+                'Location'      = $_.Location
+                'Priority'      = $_.Priority
+                'Pillar'        = $_.Pillar
+                'Purpose'       = $_.Purpose
+                'ActionLabel'   = if ($isMissing) { 'Add' } else { 'Remove' }
+                'ActionBg'      = if ($isMissing) { $brushConv.ConvertFromString('#DFF6DD') } else { $brushConv.ConvertFromString('#FDE7E9') }
+                'ActionFg'      = if ($isMissing) { $brushConv.ConvertFromString('#107C10') } else { $brushConv.ConvertFromString('#D13438') }
             }
         }
         $script:TagRecsGrid.ItemsSource = @($recRows)

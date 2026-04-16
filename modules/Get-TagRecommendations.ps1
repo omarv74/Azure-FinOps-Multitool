@@ -121,6 +121,14 @@ function Get-TagRecommendations {
         $matchedName = if ($found) { $rec.TagName }
                        elseif ($foundVariation) { $foundVariation }
                        else { $null }
+
+        # Resolve original-case tag name from ExistingTags for accurate removal
+        $actualTagName = $null
+        if ($matchedName) {
+            $actualTagName = $ExistingTags.Keys | Where-Object { $_.ToLower() -eq $matchedName.ToLower() } | Select-Object -First 1
+            if (-not $actualTagName) { $actualTagName = $matchedName }
+        }
+
         $locationStr = ''
         if ($matchedName) {
             # Case-insensitive lookup in TagLocations hashtable
@@ -136,9 +144,10 @@ function Get-TagRecommendations {
         }
 
         [PSCustomObject]@{
-            TagName   = $rec.TagName
-            Status    = $status
-            Priority  = $rec.Priority
+            TagName       = $rec.TagName
+            ActualTagName = $actualTagName
+            Status        = $status
+            Priority      = $rec.Priority
             Pillar    = $rec.Pillar
             Purpose   = $rec.Purpose
             Location  = $locationStr
