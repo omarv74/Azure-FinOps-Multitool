@@ -1895,6 +1895,23 @@ function Show-TagRemovePanel {
     $script:TagDeployPanel.Visibility = 'Visible'
 
     Load-TagScopes
+
+    # Insert "All Scopes" entries at the top of the scope selector for mass removal
+    # One per subscription: removes from the sub + all its RGs in a single click
+    $allEntries = @()
+    foreach ($sub in $script:scanData.Auth.Subscriptions) {
+        $allEntries += [PSCustomObject]@{
+            DisplayName = "[ALL] $($sub.Name) (Sub + all RGs)"
+            SubId       = $sub.Id
+        }
+    }
+    # Insert at position 0 so they appear first
+    for ($i = $allEntries.Count - 1; $i -ge 0; $i--) {
+        $script:TagScopeSelector.Items.Insert(0, $allEntries[$i].DisplayName)
+    }
+    # Track in a script-scoped list so the handler knows which indices are "all" entries
+    $script:tagRemoveAllEntries = $allEntries
+    $script:TagScopeSelector.SelectedIndex = 0
 }
 
 #-----------------------------------------------------------------------
@@ -3647,17 +3664,36 @@ $script:TagDeployButton.Add_Click({
         $script:TagDeployStatus.Text = 'No tag selected.'
         return
     }
-    if ($selectedIdx -lt 0 -or $selectedIdx -ge $script:tagDeployScopes.Count) {
+    if ($selectedIdx -lt 0) {
         $script:TagDeployStatus.Text = 'Please select a scope.'
         return
     }
 
-    $scope = $script:tagDeployScopes[$selectedIdx].Scope
+    # Determine target scopes — single scope or mass removal (all scopes for a subscription)
+    $allCount = if ($script:tagRemoveMode -and $script:tagRemoveAllEntries) { $script:tagRemoveAllEntries.Count } else { 0 }
+    $massRemove = $script:tagRemoveMode -and ($selectedIdx -lt $allCount)
+
+    if ($massRemove) {
+        # Mass remove: gather the sub + all its RGs from the loaded scopes
+        $selectedAll = $script:tagRemoveAllEntries[$selectedIdx]
+        $targetScopes = @($script:tagDeployScopes | Where-Object { $_.Scope -like "/subscriptions/$($selectedAll.SubId)*" })
+    } else {
+        # Single scope: adjust index if in remove mode (offset by allCount)
+        $adjustedIdx = if ($script:tagRemoveMode) { $selectedIdx - $allCount } else { $selectedIdx }
+        if ($adjustedIdx -lt 0 -or $adjustedIdx -ge $script:tagDeployScopes.Count) {
+            $script:TagDeployStatus.Text = 'Please select a scope.'
+            return
+        }
+        $targetScopes = @($script:tagDeployScopes[$adjustedIdx])
+    }
+
+    $scope = $targetScopes[0].Scope
     $script:TagDeployButton.IsEnabled = $false
 
     if ($script:tagRemoveMode) {
-        # REMOVE TAG
-        $script:TagDeployStatus.Text = 'Removing...'
+        # REMOVE TAG (single or mass)
+        $scopeCount = $targetScopes.Count
+        $script:TagDeployStatus.Text = if ($massRemove) { "Removing from $scopeCount scopes..." } else { 'Removing...' }
         $script:TagDeployStatus.Foreground = [System.Windows.Media.Brushes]::Gray
 
         try {
@@ -3669,38 +3705,47 @@ $script:TagDeployButton.Add_Click({
             return
         }
 
+        $allScopes = $targetScopes | ForEach-Object { $_.Scope }
+
         $rs = [runspacefactory]::CreateRunspace()
         $rs.Open()
         $ps = [powershell]::Create()
         $ps.Runspace = $rs
         [void]$ps.AddScript({
-            param($deployScope, $deployTagName, $deployToken)
-            $uri = "https://management.azure.com$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
-            $body = @{
-                operation  = 'Delete'
-                properties = @{ tags = @{ $deployTagName = '' } }
-            } | ConvertTo-Json -Depth 5
-            $hdrs = @{ 'Authorization' = "Bearer $deployToken"; 'Content-Type' = 'application/json' }
-            try {
-                $resp = Invoke-WebRequest -Uri $uri -Method Patch -Body $body -Headers $hdrs `
-                    -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
-                [PSCustomObject]@{ Success = $true; Message = "Tag '$deployTagName' removed" }
-            } catch {
-                $errMsg = $_.Exception.Message
-                if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Response) {
-                    try {
-                        $sr = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
-                        $errContent = $sr.ReadToEnd(); $sr.Close()
-                        $errBody = $errContent | ConvertFrom-Json -ErrorAction SilentlyContinue
-                        if ($errBody.error) { $errMsg = $errBody.error.message }
-                    } catch {}
+            param($deployScopeList, $deployTagName, $deployToken)
+            $successCount = 0
+            $failCount = 0
+            $failMsg = ''
+            foreach ($deployScope in $deployScopeList) {
+                $uri = "https://management.azure.com$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
+                $body = @{
+                    operation  = 'Delete'
+                    properties = @{ tags = @{ $deployTagName = '' } }
+                } | ConvertTo-Json -Depth 5
+                $hdrs = @{ 'Authorization' = "Bearer $deployToken"; 'Content-Type' = 'application/json' }
+                try {
+                    $resp = Invoke-WebRequest -Uri $uri -Method Patch -Body $body -Headers $hdrs `
+                        -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+                    $successCount++
+                } catch {
+                    $failCount++
+                    $errMsg = $_.Exception.Message
+                    if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Response) {
+                        try {
+                            $sr = [System.IO.StreamReader]::new($_.Exception.Response.GetResponseStream())
+                            $errContent = $sr.ReadToEnd(); $sr.Close()
+                            $errBody = $errContent | ConvertFrom-Json -ErrorAction SilentlyContinue
+                            if ($errBody.error) { $errMsg = $errBody.error.message }
+                        } catch {}
+                    }
+                    if (-not $failMsg) { $failMsg = $errMsg }
                 }
-                [PSCustomObject]@{ Success = $false; Message = $errMsg }
             }
-        }).AddArgument($scope).AddArgument($tagName).AddArgument($token)
+            [PSCustomObject]@{ SuccessCount = $successCount; FailCount = $failCount; FailMsg = $failMsg }
+        }).AddArgument($allScopes).AddArgument($tagName).AddArgument($token)
 
         $asyncResult = $ps.BeginInvoke()
-        $deadline = (Get-Date).AddSeconds(35)
+        $deadline = (Get-Date).AddSeconds(120)
         while (-not $asyncResult.IsCompleted -and (Get-Date) -lt $deadline) {
             $frame = [System.Windows.Threading.DispatcherFrame]::new()
             [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
@@ -3716,19 +3761,22 @@ $script:TagDeployButton.Add_Click({
                 $results = $ps.EndInvoke($asyncResult)
                 $result = if ($results.Count -gt 0) { $results[0] } else { $null }
             } catch {
-                $result = [PSCustomObject]@{ Success = $false; Message = $_.Exception.Message }
+                $result = [PSCustomObject]@{ SuccessCount = 0; FailCount = 1; FailMsg = $_.Exception.Message }
             }
-            if ($result -and $result.Success) {
-                $script:TagDeployStatus.Text = "Removed: $tagName"
+            if ($result -and $result.FailCount -eq 0) {
+                $script:TagDeployStatus.Text = "Removed '$tagName' from $($result.SuccessCount) scope(s)"
                 $script:TagDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#107C10')
+            } elseif ($result -and $result.SuccessCount -gt 0) {
+                $script:TagDeployStatus.Text = "Partial: $($result.SuccessCount) OK, $($result.FailCount) failed - $($result.FailMsg)"
+                $script:TagDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
             } else {
-                $errMsg = if ($result) { $result.Message } else { 'Unknown error' }
+                $errMsg = if ($result) { $result.FailMsg } else { 'Unknown error' }
                 $script:TagDeployStatus.Text = "Failed: $errMsg"
                 $script:TagDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
             }
         } else {
             $ps.Stop()
-            $script:TagDeployStatus.Text = 'Failed: Removal timed out after 30 seconds'
+            $script:TagDeployStatus.Text = 'Failed: Removal timed out'
             $script:TagDeployStatus.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#D83B01')
         }
         $ps.Dispose()
