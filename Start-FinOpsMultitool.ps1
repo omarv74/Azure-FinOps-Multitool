@@ -302,6 +302,14 @@ $xamlContent = $xamlContent -replace 'x:Class="[^"]*"', ''
 
 $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($xamlContent))
 $window = [System.Windows.Markup.XamlReader]::Load($reader)
+$script:window = $window
+
+# Set custom window icon
+$icoPath = Join-Path $PSScriptRoot 'gui\app.ico'
+if (Test-Path $icoPath) {
+    $iconUri = [System.Uri]::new($icoPath)
+    $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create($iconUri)
+}
 
 # -- Find Named Controls -----------------------------------------------
 $controls = @(

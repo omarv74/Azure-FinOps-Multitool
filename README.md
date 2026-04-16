@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 1.9.16](https://img.shields.io/badge/Version-1.9.16-brightgreen)
+![Version 1.9.17](https://img.shields.io/badge/Version-1.9.17-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -454,12 +454,16 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 
 ## Changelog
 
+### v1.9.17
+- **Custom window icon** — app now shows an Azure cloud icon in the title bar and taskbar instead of the default PowerShell icon
+- **Changelog cleanup** — softened v1.9.15 release notes
+
 ### v1.9.16
 - **Unified export dialog** — single "Export Scan Results" button opens a tile-based chooser (HTML, CSV, Power BI) instead of two separate buttons
 - **Power BI template (.pbit)** — Power BI export now generates a `.pbit` template alongside CSVs; double-click to open in Power BI Desktop with all tables, column types, and relationships pre-configured via a `CsvFolderPath` parameter
 
 ### v1.9.15
-- **Security hardening** — escape single quotes in tag names/values before KQL interpolation (prevents Resource Graph injection), redact bearer tokens from error log output, validate ARM scope format on tag and policy deploy functions
+- **Security hardening** — tightened input validation and error handling for recently added tag and policy deployment features
 
 ### v1.9.14
 - **Power BI CSV export** — new "Export for Power BI" button in the header bar exports up to 16 structured CSV files (costs, tags, policies, budgets, orphans, optimization, commitments, and more) to a timestamped folder with a README containing import instructions and suggested visuals
