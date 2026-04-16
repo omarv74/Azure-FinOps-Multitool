@@ -14,26 +14,80 @@ function Get-TenantHierarchy {
         [string]$TenantId,
 
         [Parameter()]
-        [object[]]$Subscriptions
+        [object[]]$Subscriptions,
+
+        [Parameter()]
+        [int]$TimeoutSeconds = 60
     )
 
     try {
-        # Get the full hierarchy starting from the tenant root group
-        $rootGroup = Get-AzManagementGroup -GroupId $TenantId -Expand -Recurse -ErrorAction Stop
+        # Run in a background runspace with timeout to prevent UI freeze
+        $rs = [runspacefactory]::CreateRunspace()
+        $rs.Open()
+        $ps = [powershell]::Create()
+        $ps.Runspace = $rs
+        [void]$ps.AddScript({
+            param($tid)
+            Get-AzManagementGroup -GroupId $tid -Expand -Recurse -ErrorAction Stop
+        }).AddArgument($TenantId)
 
-        # Build a flat list of subscriptions with their MG parent for quick lookup
-        $subMap = @{}
-        Build-SubMap -Group $rootGroup -Map ([ref]$subMap)
+        $asyncResult = $ps.BeginInvoke()
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
 
+        # Pump WPF dispatcher while waiting so the UI stays responsive
+        while (-not $asyncResult.IsCompleted -and (Get-Date) -lt $deadline) {
+            try {
+                $frame = [System.Windows.Threading.DispatcherFrame]::new()
+                [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
+                    [System.Windows.Threading.DispatcherPriority]::Background,
+                    [action]{ $frame.Continue = $false }
+                )
+                [System.Windows.Threading.Dispatcher]::PushFrame($frame)
+            } catch { }
+            Start-Sleep -Milliseconds 100
+        }
+
+        if ($asyncResult.IsCompleted) {
+            $rootGroup = $ps.EndInvoke($asyncResult)
+            if ($ps.Streams.Error.Count -gt 0) {
+                throw $ps.Streams.Error[0].Exception
+            }
+            $ps.Dispose(); $rs.Close()
+
+            if ($rootGroup) {
+                $actual = if ($rootGroup -is [array]) { $rootGroup[0] } else { $rootGroup }
+                $subMap = @{}
+                Build-SubMap -Group $actual -Map ([ref]$subMap)
+                return [PSCustomObject]@{
+                    RootGroup       = $actual
+                    SubscriptionMap = $subMap
+                }
+            }
+        } else {
+            # Timed out — stop and fall through to fallback
+            $ps.Stop()
+            $ps.Dispose(); $rs.Close()
+            Write-Warning "Management group hierarchy timed out after $TimeoutSeconds seconds. Using flat subscription list."
+        }
+
+        # Fallback
+        $subs = if ($Subscriptions) { @($Subscriptions) } else {
+            @(Get-AzSubscription -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Enabled' })
+        }
+        $fallbackRoot = [PSCustomObject]@{
+            DisplayName = "Tenant Root"
+            Name        = $TenantId
+            Children    = @()
+        }
         return [PSCustomObject]@{
-            RootGroup       = $rootGroup
-            SubscriptionMap = $subMap
+            RootGroup       = $fallbackRoot
+            SubscriptionMap = @{}
+            FlatSubs        = $subs
         }
     } catch {
         Write-Warning "Failed to load management group hierarchy: $($_.Exception.Message)"
         Write-Warning "Falling back to flat subscription list."
 
-        # Use pre-loaded subscriptions if available, otherwise fetch
         $subs = if ($Subscriptions) { @($Subscriptions) } else {
             @(Get-AzSubscription -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Enabled' })
         }
