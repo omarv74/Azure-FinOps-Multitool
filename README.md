@@ -456,7 +456,6 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 
 ### v1.9.17
 - **Custom window icon** — app now shows an Azure cloud icon in the title bar and taskbar instead of the default PowerShell icon
-- **Changelog cleanup** — softened v1.9.15 release notes
 
 ### v1.9.16
 - **Unified export dialog** — single "Export Scan Results" button opens a tile-based chooser (HTML, CSV, Power BI) instead of two separate buttons
