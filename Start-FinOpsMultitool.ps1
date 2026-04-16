@@ -3714,7 +3714,7 @@ $script:TagDeployButton.Add_Click({
     if ($script:tagRemoveMode) {
         # REMOVE TAG (single or mass)
         $scopeCount = $targetScopes.Count
-        $script:TagDeployStatus.Text = if ($massRemove) { "Removing from $scopeCount scopes..." } else { 'Removing...' }
+        $script:TagDeployStatus.Text = if ($massRemove) { "Removing from sub, RGs, and resources..." } else { 'Removing...' }
         $script:TagDeployStatus.Foreground = [System.Windows.Media.Brushes]::Gray
 
         try {
@@ -3727,18 +3727,47 @@ $script:TagDeployButton.Add_Click({
         }
 
         $allScopes = $targetScopes | ForEach-Object { $_.Scope }
+        $subId = if ($massRemove) { $script:tagRemoveAllEntries[$selectedIdx].SubId } else { '' }
 
         $rs = [runspacefactory]::CreateRunspace()
         $rs.Open()
         $ps = [powershell]::Create()
         $ps.Runspace = $rs
         [void]$ps.AddScript({
-            param($deployScopeList, $deployTagName, $deployToken)
+            param($deployScopeList, $deployTagName, $deployToken, $massMode, $subscriptionId)
             $successCount = 0
             $failCount = 0
             $failMsg = ''
+            $baseUri = 'https://management.azure.com'
+
+            # If mass mode, also find individual resources with this tag via Resource Graph
+            if ($massMode -and $subscriptionId) {
+                try {
+                    $query = "resources | where isnotnull(tags['$deployTagName']) | project id"
+                    $rgBody = @{
+                        subscriptions = @($subscriptionId)
+                        query         = $query
+                        options       = @{ '$top' = 1000 }
+                    } | ConvertTo-Json -Depth 5
+                    $rgUri = "$baseUri/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01"
+                    $hdrs = @{ 'Authorization' = "Bearer $deployToken"; 'Content-Type' = 'application/json' }
+                    $rgResp = Invoke-WebRequest -Uri $rgUri -Method Post -Body $rgBody -Headers $hdrs `
+                        -UseBasicParsing -TimeoutSec 60 -ErrorAction Stop
+                    $rgData = ($rgResp.Content | ConvertFrom-Json)
+                    if ($rgData.data) {
+                        foreach ($row in $rgData.data) {
+                            if ($row.id -and ($row.id -notin $deployScopeList)) {
+                                $deployScopeList += $row.id
+                            }
+                        }
+                    }
+                } catch {
+                    # Resource Graph query failed — continue with sub/RG scopes only
+                }
+            }
+
             foreach ($deployScope in $deployScopeList) {
-                $uri = "https://management.azure.com$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
+                $uri = "$baseUri$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
                 $body = @{
                     operation  = 'Delete'
                     properties = @{ tags = @{ $deployTagName = '' } }
@@ -3763,10 +3792,10 @@ $script:TagDeployButton.Add_Click({
                 }
             }
             [PSCustomObject]@{ SuccessCount = $successCount; FailCount = $failCount; FailMsg = $failMsg }
-        }).AddArgument($allScopes).AddArgument($tagName).AddArgument($token)
+        }).AddArgument($allScopes).AddArgument($tagName).AddArgument($token).AddArgument($massRemove).AddArgument($subId)
 
         $asyncResult = $ps.BeginInvoke()
-        $deadline = (Get-Date).AddSeconds(120)
+        $deadline = (Get-Date).AddSeconds(300)
         while (-not $asyncResult.IsCompleted -and (Get-Date) -lt $deadline) {
             $frame = [System.Windows.Threading.DispatcherFrame]::new()
             [System.Windows.Threading.Dispatcher]::CurrentDispatcher.BeginInvoke(
