@@ -485,6 +485,18 @@
                             <TextBlock x:Name="SPContractNote" Text="" FontSize="11" Foreground="#0078D4" Margin="0,0,0,8"/>
                             <DataGrid x:Name="SPGrid" MaxHeight="300"/>
 
+                            <!-- Idle VMs Section -->
+                            <TextBlock Text="Idle &amp; Underutilized VMs" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
+                            <TextBlock Text="Running VMs with very low CPU (&lt;5%) and minimal network activity over the last 14 days. These go beyond Azure Advisor and flag VMs that may have been missed. Candidates for deallocating, downsizing, or converting to auto-shutdown schedules." FontSize="11" Foreground="#999" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="IdleVMSummaryText" Text="" FontSize="12" Foreground="#666" Margin="0,0,0,8"/>
+                            <DataGrid x:Name="IdleVMGrid" MaxHeight="300"/>
+
+                            <!-- Storage Tier Section -->
+                            <TextBlock Text="Storage Tier Optimization" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
+                            <TextBlock Text="Hot-tier storage accounts with very low transaction counts over the last 30 days. Moving infrequently accessed data to Cool (50% savings) or Archive (90% savings) tier can significantly reduce storage costs." FontSize="11" Foreground="#999" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="StorageTierSummaryText" Text="" FontSize="12" Foreground="#666" Margin="0,0,0,8"/>
+                            <DataGrid x:Name="StorageTierGrid" MaxHeight="300"/>
+
                             <!-- Advisor Section -->
                             <TextBlock Text="Advisor Cost Recommendations" Style="{StaticResource SectionHeader}" Margin="0,20,0,0"/>
                             <TextBlock Text="Azure Advisor analyzes your resource usage patterns and identifies wasteful spend: idle VMs, oversized resources, orphaned disks, and underutilized services. These are quick wins that reduce cost without any commitment." FontSize="11" Foreground="#999" TextWrapping="Wrap" Margin="0,0,0,8"/>
@@ -690,6 +702,38 @@
                             <!-- References -->
                             <TextBlock Text="References" Style="{StaticResource SectionHeader}"/>
                             <StackPanel x:Name="ReferencesPanel" Margin="0,0,0,10"/>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- Resources Tab ================================ -->
+                <TabItem Header="  Resources  " FontSize="13">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                        <StackPanel x:Name="ResourcesPanel">
+
+                            <TextBlock Text="Azure FinOps Resources" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="Curated links to official Microsoft documentation, tools, and community resources for Azure cost management and FinOps." FontSize="12" Foreground="#666" TextWrapping="Wrap" Margin="0,0,0,16"/>
+
+                            <!-- FinOps Framework -->
+                            <TextBlock Text="FinOps Framework" Style="{StaticResource SectionHeader}" Foreground="#0078D4" FontSize="15"/>
+                            <StackPanel x:Name="ResourcesFinOpsPanel" Margin="0,0,0,16"/>
+
+                            <!-- Cost Management -->
+                            <TextBlock Text="Cost Management &amp; Optimization" Style="{StaticResource SectionHeader}" Foreground="#107C10" FontSize="15"/>
+                            <StackPanel x:Name="ResourcesCostPanel" Margin="0,0,0,16"/>
+
+                            <!-- Rate Optimization -->
+                            <TextBlock Text="Rate Optimization (RIs, Savings Plans, AHB)" Style="{StaticResource SectionHeader}" Foreground="#8764B8" FontSize="15"/>
+                            <StackPanel x:Name="ResourcesRatePanel" Margin="0,0,0,16"/>
+
+                            <!-- Governance -->
+                            <TextBlock Text="Governance &amp; Policy" Style="{StaticResource SectionHeader}" Foreground="#D83B01" FontSize="15"/>
+                            <StackPanel x:Name="ResourcesGovernancePanel" Margin="0,0,0,16"/>
+
+                            <!-- Workbooks &amp; Tools -->
+                            <TextBlock Text="Azure Workbooks &amp; Tools" Style="{StaticResource SectionHeader}" Foreground="#005A9E" FontSize="15"/>
+                            <StackPanel x:Name="ResourcesToolsPanel" Margin="0,0,0,16"/>
+
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>

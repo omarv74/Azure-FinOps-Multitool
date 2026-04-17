@@ -291,6 +291,8 @@ $modulePath = Join-Path $PSScriptRoot 'modules'
 . (Join-Path $modulePath 'Get-PolicyInventory.ps1')
 . (Join-Path $modulePath 'Get-PolicyRecommendations.ps1')
 . (Join-Path $modulePath 'Deploy-PolicyAssignment.ps1')
+. (Join-Path $modulePath 'Get-StorageTierAdvice.ps1')
+. (Join-Path $modulePath 'Get-IdleVMs.ps1')
 
 # -- Load XAML ----------------------------------------------------------
 $xamlPath = Join-Path $PSScriptRoot 'gui\MainWindow.xaml'
@@ -343,6 +345,11 @@ $controls = @(
     'AdvisorCountText', 'AdvisorSavingsText', 'AHBSummaryText',
     'AHBGrid', 'RIGrid', 'SPGrid', 'AdvisorGrid',
     'CommitmentGrid', 'OrphanGrid', 'OrphanSummaryText',
+    'IdleVMGrid', 'IdleVMSummaryText',
+    'StorageTierGrid', 'StorageTierSummaryText',
+    # Resources Tab
+    'ResourcesPanel', 'ResourcesFinOpsPanel', 'ResourcesCostPanel',
+    'ResourcesRatePanel', 'ResourcesGovernancePanel', 'ResourcesToolsPanel',
     # Billing
     'BillingAccessNote', 'BillingAccountsGrid', 'BillingProfilesGrid',
     'InvoiceSectionsGrid', 'EADeptHeader', 'EADeptGrid', 'CostAllocationGrid',
@@ -397,6 +404,8 @@ $script:scanData = @{
     Savings       = $null
     PolicyInv     = $null
     PolicyRecs    = $null
+    StorageTier   = $null
+    IdleVMs       = $null
 }
 
 ###########################################################################
@@ -2666,6 +2675,169 @@ function Populate-OrphanedSection {
 }
 
 #-----------------------------------------------------------------------
+# IDLE VM SECTION (Optimization tab)
+#-----------------------------------------------------------------------
+function Populate-IdleVMSection {
+    $d = $script:scanData
+    if (-not $d.IdleVMs -or -not $d.IdleVMs.HasData) {
+        $script:IdleVMSummaryText.Text = "No idle or underutilized VMs detected (scanned $($d.IdleVMs.ScannedVMs) running VMs)."
+        $script:IdleVMGrid.ItemsSource = @([PSCustomObject]@{ Status = 'All running VMs show healthy utilization. No action needed.' })
+        return
+    }
+
+    if (-not $script:resCostMapBuilt) { Build-ResourceCostMap }
+    $currency = if ($d.ResourceCosts -and $d.ResourceCosts.Count -gt 0) {
+        Get-CurrencySymbol -Code $d.ResourceCosts[0].Currency
+    } else { '$' }
+
+    $idleCount = ($d.IdleVMs.IdleVMs | Where-Object { $_.Classification -eq 'Idle' }).Count
+    $underCount = ($d.IdleVMs.IdleVMs | Where-Object { $_.Classification -eq 'Underutilized' }).Count
+    $script:IdleVMSummaryText.Text = "$($d.IdleVMs.Count) VM(s) flagged: $idleCount idle, $underCount underutilized (of $($d.IdleVMs.ScannedVMs) running VMs scanned)"
+
+    $rows = @()
+    foreach ($vm in $d.IdleVMs.IdleVMs) {
+        $rc = Find-ResourceCost -Name $vm.VMName -SubscriptionId $vm.SubscriptionId -ResourceGroup $vm.ResourceGroup -ResourceType 'microsoft.compute/virtualmachines'
+        $actual   = if ($rc) { "$currency$($rc.Actual.ToString('N2'))" } else { '-' }
+        $forecast = if ($rc) { "$currency$($rc.Forecast.ToString('N2'))" } else { '-' }
+        $rows += [PSCustomObject]@{
+            Classification = $vm.Classification
+            VM             = $vm.VMName
+            'Resource Group' = $vm.ResourceGroup
+            Size           = $vm.VMSize
+            OS             = $vm.OS
+            'Avg CPU (14d)' = "$($vm.AvgCPU14d)%"
+            'Net/Day'      = $vm.NetworkPerDay
+            'Cost (MTD)'   = $actual
+            Forecast       = $forecast
+            Recommendation = $vm.Recommendation
+        }
+    }
+    $script:IdleVMGrid.ItemsSource = @($rows)
+}
+
+#-----------------------------------------------------------------------
+# STORAGE TIER SECTION (Optimization tab)
+#-----------------------------------------------------------------------
+function Populate-StorageTierSection {
+    $d = $script:scanData
+    if (-not $d.StorageTier -or -not $d.StorageTier.HasData) {
+        $total = if ($d.StorageTier) { $d.StorageTier.TotalHotAccounts } else { 0 }
+        $script:StorageTierSummaryText.Text = "No storage tier optimization found ($total hot-tier accounts scanned)."
+        $script:StorageTierGrid.ItemsSource = @([PSCustomObject]@{ Status = 'All hot-tier storage accounts show healthy transaction activity. No action needed.' })
+        return
+    }
+
+    $archiveCount = ($d.StorageTier.Recommendations | Where-Object { $_.Recommendation -eq 'Archive' }).Count
+    $coolCount    = ($d.StorageTier.Recommendations | Where-Object { $_.Recommendation -eq 'Cool' }).Count
+    $script:StorageTierSummaryText.Text = "$($d.StorageTier.Count) account(s) flagged: $archiveCount for Archive, $coolCount for Cool (of $($d.StorageTier.TotalHotAccounts) hot-tier accounts)"
+
+    $rows = @()
+    foreach ($sa in $d.StorageTier.Recommendations) {
+        $rows += [PSCustomObject]@{
+            'Storage Account' = $sa.StorageAccount
+            'Resource Group'  = $sa.ResourceGroup
+            Location          = $sa.Location
+            SKU               = $sa.SKU
+            'Current Tier'    = $sa.CurrentTier
+            'Capacity (GB)'   = $sa.CapacityGB
+            'Transactions (30d)' = $sa.Transactions30d
+            Recommendation    = $sa.Recommendation
+            'Est. Savings'    = "$($sa.EstSavingsPct)%"
+        }
+    }
+    $script:StorageTierGrid.ItemsSource = @($rows)
+}
+
+#-----------------------------------------------------------------------
+# RESOURCES TAB (static links — no scan data needed)
+#-----------------------------------------------------------------------
+function Populate-ResourcesTab {
+    # Helper to create a clickable hyperlink block
+    function New-LinkBlock {
+        param([string]$Text, [string]$Url, [string]$Description)
+        $panel = [System.Windows.Controls.StackPanel]::new()
+        $panel.Margin = [System.Windows.Thickness]::new(0, 2, 0, 6)
+
+        $link = [System.Windows.Documents.Hyperlink]::new()
+        $link.Inlines.Add($Text)
+        $link.NavigateUri = [Uri]::new($Url)
+        $link.Add_RequestNavigate({ Start-Process $_.Uri.AbsoluteUri })
+
+        $tb = [System.Windows.Controls.TextBlock]::new()
+        $tb.FontSize = 13
+        $tb.Inlines.Add($link)
+        $panel.Children.Add($tb) | Out-Null
+
+        if ($Description) {
+            $desc = [System.Windows.Controls.TextBlock]::new()
+            $desc.Text = $Description
+            $desc.FontSize = 11
+            $desc.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#666')
+            $desc.TextWrapping = [System.Windows.TextWrapping]::Wrap
+            $desc.Margin = [System.Windows.Thickness]::new(12, 0, 0, 0)
+            $panel.Children.Add($desc) | Out-Null
+        }
+        $panel
+    }
+
+    # FinOps Framework
+    $script:ResourcesFinOpsPanel.Children.Clear()
+    @(
+        @('FinOps Foundation', 'https://www.finops.org/', 'The FinOps Foundation — framework, community, certifications.')
+        @('FinOps with Azure', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/finops/', 'Microsoft Learn — FinOps principles applied to Azure.')
+        @('Cloud Adoption Framework — Cost Management', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/manage/azure-server-management/cost-management', 'CAF discipline for managing cloud costs at enterprise scale.')
+        @('FinOps Toolkit (GitHub)', 'https://github.com/microsoft/finops-toolkit', 'Open-source Power BI reports, workbooks, and Bicep modules from Microsoft.')
+    ) | ForEach-Object {
+        $script:ResourcesFinOpsPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    }
+
+    # Cost Management
+    $script:ResourcesCostPanel.Children.Clear()
+    @(
+        @('Azure Cost Management Overview', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/overview-cost-management', 'Core service for analyzing, monitoring, and optimizing Azure costs.')
+        @('Azure Advisor — Cost Recommendations', 'https://learn.microsoft.com/en-us/azure/advisor/advisor-cost-recommendations', 'Automated right-sizing, shutdown, and purchase recommendations.')
+        @('Azure Pricing Calculator', 'https://azure.microsoft.com/en-us/pricing/calculator/', 'Estimate costs before deploying resources.')
+        @('Cost Management Best Practices', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-mgt-best-practices', 'Official best practices for Azure cost management.')
+    ) | ForEach-Object {
+        $script:ResourcesCostPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    }
+
+    # Rate Optimization
+    $script:ResourcesRatePanel.Children.Clear()
+    @(
+        @('Azure Reservations', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/reservations/save-compute-costs-reservations', 'Lock in discounted rates for VMs, SQL, Cosmos, and more (30-72% savings).')
+        @('Azure Savings Plans', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/savings-plan/', 'Flexible hourly commitment across compute services (15-65% savings).')
+        @('Azure Hybrid Benefit', 'https://learn.microsoft.com/en-us/azure/virtual-machines/windows/hybrid-use-benefit-licensing', 'Use existing Windows/SQL licenses to save 40-85% on Azure VMs and SQL.')
+        @('Dev/Test Pricing', 'https://azure.microsoft.com/en-us/pricing/dev-test/', 'Discounted rates for dev/test workloads — no Windows license charges.')
+    ) | ForEach-Object {
+        $script:ResourcesRatePanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    }
+
+    # Governance
+    $script:ResourcesGovernancePanel.Children.Clear()
+    @(
+        @('Azure Policy Overview', 'https://learn.microsoft.com/en-us/azure/governance/policy/overview', 'Enforce organizational standards and assess compliance at scale.')
+        @('Tagging Strategy', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-tagging', 'CAF tagging best practices for cost allocation and governance.')
+        @('Management Group Hierarchy', 'https://learn.microsoft.com/en-us/azure/governance/management-groups/overview', 'Organize subscriptions and apply policies at scale.')
+        @('Azure Budgets', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets', 'Set spending thresholds and receive alerts when costs exceed targets.')
+    ) | ForEach-Object {
+        $script:ResourcesGovernancePanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    }
+
+    # Workbooks & Tools
+    $script:ResourcesToolsPanel.Children.Clear()
+    @(
+        @('Orphaned Resources Workbook', 'https://github.com/dolevshor/azure-orphan-resources', 'Community Azure Workbook showing orphaned resources across subscriptions.')
+        @('Azure Optimization Engine (AOE)', 'https://github.com/helderpinto/AzureOptimizationEngine', 'Automated optimization recommendations engine using Log Analytics.')
+        @('Cost Management Labs', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/quick-acm-cost-analysis', 'Hands-on quickstart: analyze costs in the Azure portal.')
+        @('Azure Charts', 'https://azurecharts.com/', 'Visual changelog of Azure services, regions, and updates.')
+        @('Azure FinOps Multitool (this app)', 'https://github.com/z-larsen/Azure-FinOps-Multitool', 'Source code and documentation for this scanner.')
+    ) | ForEach-Object {
+        $script:ResourcesToolsPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    }
+}
+
+#-----------------------------------------------------------------------
 # BUDGETS TAB
 #-----------------------------------------------------------------------
 function Populate-BudgetsTab {
@@ -4074,10 +4246,16 @@ $script:scanStages = @(
     @{ Label = 'Scanning commitment utilization...';   Pct = 68;  Action = {
         $script:scanData.Commitments = Get-CommitmentUtilization -Subscriptions $script:scanData.Auth.Subscriptions
     }}
-    @{ Label = 'Scanning orphaned resources...';       Pct = 72;  Action = {
+    @{ Label = 'Scanning orphaned resources...';       Pct = 70;  Action = {
         $script:scanData.Orphans = Get-OrphanedResources -Subscriptions $script:scanData.Auth.Subscriptions
     }}
-    @{ Label = 'Loading reservation advice...';        Pct = 76;  Action = {
+    @{ Label = 'Scanning idle VMs...';                 Pct = 73;  Action = {
+        $script:scanData.IdleVMs = Get-IdleVMs -Subscriptions $script:scanData.Auth.Subscriptions
+    }}
+    @{ Label = 'Scanning storage tier advice...';      Pct = 75;  Action = {
+        $script:scanData.StorageTier = Get-StorageTierAdvice -Subscriptions $script:scanData.Auth.Subscriptions
+    }}
+    @{ Label = 'Loading reservation advice...';        Pct = 77;  Action = {
         $script:scanData.Reservations = Get-ReservationAdvice -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Loading optimization advice...';       Pct = 80;  Action = {
@@ -4114,11 +4292,14 @@ $script:scanStages = @(
         try { Populate-CommitmentSection } catch { Write-Warning "Populate-CommitmentSection failed: $($_.Exception.Message)" }
         try { Populate-OrphanedSection }   catch { Write-Warning "Populate-OrphanedSection failed: $($_.Exception.Message)" }
         try { Populate-OptimizationTab }   catch { Write-Warning "Populate-OptimizationTab failed: $($_.Exception.Message)" }
+        try { Populate-IdleVMSection }     catch { Write-Warning "Populate-IdleVMSection failed: $($_.Exception.Message)" }
+        try { Populate-StorageTierSection } catch { Write-Warning "Populate-StorageTierSection failed: $($_.Exception.Message)" }
         try { Populate-BudgetSection }     catch { Write-Warning "Populate-BudgetSection failed: $($_.Exception.Message)" }
         try { Populate-BudgetsTab }        catch { Write-Warning "Populate-BudgetsTab failed: $($_.Exception.Message)" }
         try { Populate-Scorecard }         catch { Write-Warning "Populate-Scorecard failed: $($_.Exception.Message)" }
         try { Populate-BillingTab }        catch { Write-Warning "Populate-BillingTab failed: $($_.Exception.Message)" }
         try { Populate-GuidanceTab }       catch { Write-Warning "Populate-GuidanceTab failed: $($_.Exception.Message)" }
+        try { Populate-ResourcesTab }      catch { Write-Warning "Populate-ResourcesTab failed: $($_.Exception.Message)" }
         $script:tagDeployScopesLoaded = $false   # Reset so scopes reload on next tag deploy
         $script:policyDeployScopesLoaded = $false  # Reset so scopes reload on next policy deploy
     }}
