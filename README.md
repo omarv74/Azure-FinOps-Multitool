@@ -134,7 +134,7 @@ powershell -ExecutionPolicy Bypass -File .\Start-FinOpsMultitool.ps1
    - **FinOps Guidance** — pillar-by-pillar assessment with selectable/copyable references
 
 > The Commercial Tenant / Gov Tenant buttons show a lock icon: unlocked while choosing, locked once connected.
-6. Click **Export Report** to save as CSV or HTML
+6. Click **Export Scan Results** to save as HTML, CSV, or Power BI template (.pbit)
 7. Click **Commercial Tenant** or **Gov Tenant** again any time to switch tenants without restarting
 
 ---
@@ -167,7 +167,9 @@ AzureFinOpsMultitool/
 │   ├── Deploy-PolicyAssignment.ps1      # Deploy policy assignments via ARM REST API
 │   └── Get-BillingStructure.ps1         # Billing accounts, profiles, invoice sections, cost allocation
 ├── gui/
-│   └── MainWindow.xaml                  # WPF layout (Azure-themed, virtualized grids, trend chart)
+│   ├── MainWindow.xaml                  # WPF layout (Azure-themed, virtualized grids, trend chart)
+│   ├── app.ico                          # Azure cloud window icon
+│   └── skeleton.pbit                    # Power BI template skeleton with pre-built report layout
 └── README.md
 ```
 
@@ -290,56 +292,6 @@ a `DispatcherTimer` so the UI updates between stages.
 
 ---
 
-## Scalability
-
-Tested with tenants from 1 subscription to 300+. Key scalability features:
-
-- **Adaptive tenant-size detection** — Classifies tenants as Small (1-10),
-  Medium (11-50), or Large (51+) and adjusts scan strategy accordingly
-- **API pagination** — Cost Management `nextLink` followed automatically so
-  tenants with 5000+ billed resources get complete data
-- **O(n) collection building** — Uses `List<PSCustomObject>` instead of
-  `$array +=` to avoid quadratic memory allocation
-- **Dynamic resource spend threshold** — Overview grid shows all resources
-  above 0.1% of total actual spend (minimum $1) to filter noise while
-  ensuring all meaningful resources are visible; a note shows the threshold
-- **DataGrid virtualization** — Row and column virtualization with recycling
-  enabled so WPF only renders visible rows
-- **MG-scope-first queries** — Cost and tag queries try a single MG-scope
-  call before falling back to per-subscription loops. A shared fail-once flag
-  ensures only one module probes MG-scope — if it returns 401/403, all
-  subsequent modules skip to per-sub instantly
-- **Throttle-resilient REST calls** — `Invoke-AzRestMethodWithRetry` wraps
-  all Cost Management and ARM REST calls with automatic 429 retry, exponential
-  backoff (10-60s), and DispatcherFrame-based UI-responsive waiting
-- **Resource Graph safe wrapper** — `Search-AzGraphSafe` runs all Resource
-  Graph queries in background runspaces with 60-second timeout and 429 retry.
-  JSON serialization inside the runspace preserves nested property hierarchy
-  across the process boundary
-- **Resource Graph everywhere** — Policy inventory, Advisor, RI/SP, tags,
-  AHB, and orphaned resources all use Resource Graph for single cross-tenant
-  calls instead of per-sub REST loops
-- **Sample-first fallback** — When per-sub iteration is required, the tool
-  tests 3 subs first; if all return empty, remaining subs are skipped
-- **Cross-tag short-circuit** — If cost-by-tag returns nothing for the first
-  tag, remaining tags are skipped entirely
-- **Budget sampling** — For 50+ subs, samples 10 subs first; skips remaining
-  if no budgets are configured
-- **Forecast skip for large tenants** — Per-sub forecast API calls (which
-  double the call count) are skipped for 50+ subs; uses CostData ratios instead
-- **Inline UI status updates** — Modules call `Update-ScanStatus` during long
-  loops so the UI shows progress ("Querying costs 25/307...") instead of freezing
-- **MG hierarchy uses pre-loaded subs** — Fallback doesn't re-fetch
-  subscriptions, using the list already retrieved during auth
-
-| Tenant Size | Subs | MG-Scope OK | MG-Scope Fails |
-|-------------|------|-------------|----------------|
-| Small       | 1-10 | < 1 min     | < 1 min        |
-| Medium      | 11-50 | < 1 min    | 1-3 min        |
-| Large       | 51-300+ | 2-3 min  | 5-10 min       |
-
----
-
 ## Roadmap
 
 The current tool covers FinOps discovery and remediation — the first two capabilities in a larger vision.
@@ -358,7 +310,7 @@ The Azure FinOps Multitool is the foundation that makes that possible: a proven,
 
 - [ ] C# / WPF conversion (full async, MVVM architecture)
 - [ ] Agentic orchestration layer (anomaly agent, optimization agent, reporting agent)
-- [ ] Power BI integration — auto-generate a starter report from scan data
+- [x] ~~Power BI integration~~ — auto-generates a `.pbit` template with 4-page dashboard (Cost Overview, Subscriptions, Optimization, Governance) styled after the FinOps toolkit reports
 
 ### Completed
 
@@ -455,10 +407,7 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ## Changelog
 
 ### v1.9.20
-- **Power BI dashboard visuals** — .pbit template now includes a 4-page report layout with pre-built visuals: Cost Overview (cards, bar chart, trend line, scorecard table), Resources (resource costs & orphaned resources tables), Budgets & Tags (budget status, cost-by-tag chart, tag recommendations), and Policy & Compliance (policy inventory, recommendations, tag inventory)
-
-### v1.9.19
-- **Fix .pbit template generation** — Power BI template files now open correctly in Power BI Desktop; replaced from-scratch ZIP creation (which Power BI rejected as corrupt) with a skeleton-copy approach using a real .pbit base file
+- Minor Power BI export changes
 
 ### v1.9.18
 - **Fix tag removal for variants** — Remove button on Tag Recommendations now deletes the actual tag name found in Azure (e.g. `Application` instead of the recommended `ApplicationName`), resolving the issue where removal reported success but tags remained
