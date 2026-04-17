@@ -4565,11 +4565,14 @@ $script:TagDeployButton.Add_Click({
                     # Escape single quotes to prevent KQL injection
                     $safeTagName = $deployTagName -replace "'", "\\'"
                     $safeValueFilter = if ($valueFilter) { $valueFilter -replace "'", "\\'" } else { $null }
+                    # Use case-insensitive tag lookup: enumerate tag keys and compare with tolower()
                     if ($safeValueFilter) {
-                        $query = "resources | where tags['$safeTagName'] == '$safeValueFilter' | project id"
+                        $tagFilter = "| mv-expand bagexpansion=array tkeys = bag_keys(tags) | where tolower(tostring(tkeys)) == tolower('$safeTagName') and tags[tostring(tkeys)] == '$safeValueFilter'"
                     } else {
-                        $query = "resources | where isnotnull(tags['$safeTagName']) | project id"
+                        $tagFilter = "| mv-expand bagexpansion=array tkeys = bag_keys(tags) | where tolower(tostring(tkeys)) == tolower('$safeTagName')"
                     }
+                    # Query both resources and resourcecontainers (sub/RG-level tags)
+                    $query = "resources $tagFilter | project id | union (resourcecontainers $tagFilter | project id)"
                     $skipToken = $null
                     do {
                         $rgBody = @{
@@ -4605,9 +4608,16 @@ $script:TagDeployButton.Add_Click({
                             $tagResp = Invoke-WebRequest -Uri $tagUri -Method Get -Headers $hdrs `
                                 -UseBasicParsing -TimeoutSec 15 -ErrorAction Stop
                             $tagData = ($tagResp.Content | ConvertFrom-Json)
-                            if ($tagData.properties.tags.$deployTagName -eq $valueFilter) {
-                                $filteredScopes += $s
+                            # Case-insensitive tag name lookup
+                            $matched = $false
+                            if ($tagData.properties.tags) {
+                                foreach ($tk in $tagData.properties.tags.PSObject.Properties) {
+                                    if ($tk.Name -ieq $deployTagName -and $tk.Value -eq $valueFilter) {
+                                        $matched = $true; break
+                                    }
+                                }
                             }
+                            if ($matched) { $filteredScopes += $s }
                         } catch {
                             # Can't read tags — include scope anyway to attempt removal
                             $filteredScopes += $s
@@ -4618,10 +4628,27 @@ $script:TagDeployButton.Add_Click({
             }
 
             foreach ($deployScope in $deployScopeList) {
+                # Resolve the actual tag name casing from the resource to ensure exact match
+                $actualTagName = $deployTagName
+                try {
+                    $tagCheckUri = "$baseUri$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
+                    $tagCheckResp = Invoke-WebRequest -Uri $tagCheckUri -Method Get -Headers $hdrs `
+                        -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+                    $tagCheckData = ($tagCheckResp.Content | ConvertFrom-Json)
+                    if ($tagCheckData.properties.tags) {
+                        foreach ($tk in $tagCheckData.properties.tags.PSObject.Properties) {
+                            if ($tk.Name -ieq $deployTagName) {
+                                $actualTagName = $tk.Name
+                                break
+                            }
+                        }
+                    }
+                } catch {}
+
                 $uri = "$baseUri$deployScope/providers/Microsoft.Resources/tags/default?api-version=2021-04-01"
                 $body = @{
                     operation  = 'Delete'
-                    properties = @{ tags = @{ $deployTagName = '' } }
+                    properties = @{ tags = @{ $actualTagName = '' } }
                 } | ConvertTo-Json -Depth 5
                 $hdrs = @{ 'Authorization' = "Bearer $deployToken"; 'Content-Type' = 'application/json' }
                 $succeeded = $false
@@ -4656,7 +4683,9 @@ $script:TagDeployButton.Add_Click({
                             if ($errBody.error) { $errMsg = $errBody.error.message }
                         } catch {}
                     }
-                    if (-not $failMsg) { $failMsg = $errMsg }
+                    # Include the failing resource scope for diagnostics
+                    $shortScope = ($deployScope -split '/')[-1]
+                    if (-not $failMsg) { $failMsg = "$errMsg (resource: $shortScope)" }
                 }
             }
             [PSCustomObject]@{ SuccessCount = $successCount; FailCount = $failCount; FailMsg = $failMsg }
