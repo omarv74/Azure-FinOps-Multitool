@@ -4037,6 +4037,18 @@ footer { margin-top: 40px; padding-top: 15px; border-top: 1px solid #ddd; font-s
 <div class="card"><div class="label">Untagged Resources</div><div class="value" style="color:#D83B01">$($d.Tags.UntaggedCount)</div></div>
 </div>
 "@)
+        # Tag inventory table
+        if ($d.Tags.TagNames -and $d.Tags.TagNames.Count -gt 0) {
+            [void]$sb.Append("<h3>Tag Inventory ($($d.Tags.TagNames.Count) tags)</h3>")
+            [void]$sb.Append('<table><tr><th>Tag Name</th><th class="text-right">Resources</th><th class="text-right">Unique Values</th><th>Sample Values</th></tr>')
+            foreach ($entry in $d.Tags.TagNames.GetEnumerator() | Sort-Object { $_.Value.TotalResources } -Descending) {
+                $allValues = @($entry.Value.Values | ForEach-Object { $_.Value })
+                $sampleValues = ($allValues | Select-Object -First 5) -join ', '
+                if ($allValues.Count -gt 5) { $sampleValues += ", ... (+$($allValues.Count - 5) more)" }
+                [void]$sb.Append("<tr><td><strong>$($esc::Escape($entry.Key))</strong></td><td class=`"text-right`">$($entry.Value.TotalResources)</td><td class=`"text-right`">$($allValues.Count)</td><td>$($esc::Escape($sampleValues))</td></tr>")
+            }
+            [void]$sb.Append('</table>')
+        }
         # CAF recommended tags
         if ($d.TagRecs) {
             [void]$sb.Append("<h3>Microsoft CAF Recommended Tags</h3>")
@@ -4083,6 +4095,16 @@ footer { margin-top: 40px; padding-top: 15px; border-top: 1px solid #ddd; font-s
                 [void]$sb.Append("<tr><td>$($esc::Escape($cs.Subscription))</td><td class=`"text-right`">$($cs.Compliant)</td><td class=`"text-right`">$($cs.NonCompliant)</td><td class=`"text-right`">$($cs.TotalResources)</td><td class=`"text-right`">$cpct%</td></tr>")
             }
             [void]$sb.Append("</table>")
+        }
+        # Policy assignment inventory
+        if ($d.PolicyInv.Assignments -and $d.PolicyInv.Assignments.Count -gt 0) {
+            [void]$sb.Append("<h3>Policy Assignment Inventory ($($d.PolicyInv.Assignments.Count) assignments)</h3>")
+            [void]$sb.Append('<table><tr><th>Assignment Name</th><th>Type</th><th>Effect</th><th>Enforcement</th><th>Origin</th><th>Subscription</th></tr>')
+            foreach ($pa in $d.PolicyInv.Assignments) {
+                $paType = if ($pa.PolicyDefId -match '/policySetDefinitions/') { 'Initiative' } else { 'Policy' }
+                [void]$sb.Append("<tr><td>$($esc::Escape($pa.AssignmentName))</td><td>$paType</td><td>$($esc::Escape($pa.Effect))</td><td>$($esc::Escape($pa.EnforcementMode))</td><td>$($esc::Escape($pa.Origin))</td><td>$($esc::Escape($pa.Subscription))</td></tr>")
+            }
+            [void]$sb.Append('</table>')
         }
     }
 
