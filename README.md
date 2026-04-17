@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 1.9.19](https://img.shields.io/badge/Version-1.9.19-brightgreen)
+![Version 1.9.20](https://img.shields.io/badge/Version-1.9.20-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -453,6 +453,9 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ---
 
 ## Changelog
+
+### v1.9.20
+- **Power BI dashboard visuals** — .pbit template now includes a 4-page report layout with pre-built visuals: Cost Overview (cards, bar chart, trend line, scorecard table), Resources (resource costs & orphaned resources tables), Budgets & Tags (budget status, cost-by-tag chart, tag recommendations), and Policy & Compliance (policy inventory, recommendations, tag inventory)
 
 ### v1.9.19
 - **Fix .pbit template generation** — Power BI template files now open correctly in Power BI Desktop; replaced from-scratch ZIP creation (which Power BI rejected as corrupt) with a skeleton-copy approach using a real .pbit base file
