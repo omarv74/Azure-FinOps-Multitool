@@ -56,7 +56,10 @@ It's designed as the on-ramp — the tool that earns the first conversation, sur
 | **Budget Policy**   | ARM Policy Assignment API (PUT)   | Deploy budget enforcement policies (AuditIfNotExists / DeployIfNotExists) at subscription or MG scope |
 | **Billing**         | Billing Accounts/Profiles API     | Billing accounts, profiles, invoice sections, EA depts     |
 | **Cost Allocation** | Cost Management Allocation API    | Existing cost allocation rules with source/target counts   |
+| **Idle VMs**        | Azure Monitor Metrics API          | Running VMs with <5% CPU and minimal network over 14 days — candidates Advisor missed |
+| **Storage Tiers**   | Azure Monitor Metrics API          | Hot-tier storage accounts with low transaction activity — candidates for Cool/Archive |
 | **FinOps Guidance** | All of the above                  | FinOps Maturity Score (0-100) with weighted category breakdown and actionable advice |
+| **Resources**       | Static (curated links)             | Links to FinOps Foundation, Cost Management docs, orphaned resources workbook, toolkit |
 
 ---
 
@@ -122,16 +125,17 @@ powershell -ExecutionPolicy Bypass -File .\Start-FinOpsMultitool.ps1
 2. Click **Commercial Tenant** (or **Gov Tenant** for Azure Government) — a browser login opens; after sign-in, a
    tenant picker dialog lists all accessible tenants
 3. Select a tenant and click **Select**
-4. Click **Scan** — the tool runs through 21 data-collection
+4. Click **Scan** — the tool runs through 23 data-collection
    stages with a progress bar
 5. When done, browse the tabs:
    - **Overview** — cost summary cards, savings realized, budget status, subscription cost table (with orphan savings), top resources by spend, subscription scorecard
    - **Cost Analysis** -- 6-month cost trend bar chart, cost anomaly flags (25%+ MoM change), pick a tag from the dropdown to see spend by tag value
    - **Tags** -- tag inventory with unique values, coverage %, CAF compliance check, inline Add/Remove buttons per tag to deploy or remove tags directly on subscriptions/RGs
    - **Policy** -- policy and initiative assignment inventory, compliance %, CAF-recommended policies and initiatives, clickable buttons to deploy policies with desired effect, remediation tasks for DINE/Modify policies
-   - **Optimization** -- commitment utilization (RI/SP %), orphaned/idle resources with cost data and estimated annual waste, AHB gaps, RI recs, SP recs, Advisor recs
+   - **Optimization** -- commitment utilization (RI/SP %), orphaned/idle resources with cost data and estimated annual waste, idle VM detection (14-day metrics), storage tier advice, AHB gaps, RI recs, SP recs, Advisor recs
    - **Billing** -- billing accounts, billing profiles (MCA), invoice sections, EA departments, cost allocation rules
    - **FinOps Guidance** — pillar-by-pillar assessment with selectable/copyable references
+   - **Resources** — curated links to FinOps Framework, Cost Management, Azure Workbooks, orphaned resources workbook, and more
 
 > The Commercial Tenant / Gov Tenant buttons show a lock icon: unlocked while choosing, locked once connected.
 6. Click **Export Scan Results** to save as HTML, CSV, or Power BI template (.pbit)
@@ -157,6 +161,8 @@ AzureFinOpsMultitool/
 │   ├── Get-AHBOpportunities.ps1         # Azure Hybrid Benefit gaps
 │   ├── Get-CommitmentUtilization.ps1    # RI & Savings Plan utilization data
 │   ├── Get-OrphanedResources.ps1        # Orphaned disks, IPs, NICs, VMs, ASPs, snapshots
+│   ├── Get-IdleVMs.ps1                  # Idle & underutilized VM detection (14-day metrics)
+│   ├── Get-StorageTierAdvice.ps1        # Storage tier optimization (Hot → Cool/Archive)
 │   ├── Get-ReservationAdvice.ps1        # RI / SP recs (Resource Graph → REST fallback)
 │   ├── Get-OptimizationAdvice.ps1       # Advisor cost optimizations (Resource Graph → REST fallback)
 │   ├── Get-BudgetStatus.ps1             # Budget vs actual per subscription
@@ -194,14 +200,16 @@ a `DispatcherTimer` so the UI updates between stages.
 | 9     | Get-AHBOpportunities      | `Search-AzGraph` (3 queries)              | ~3s   |
 | 10    | Get-CommitmentUtilization  | REST: Reservation Summaries + Benefit Util API | ~5s |
 | 11    | Get-OrphanedResources     | `Search-AzGraph` (6 KQL queries)          | ~3s   |
-| 12    | Get-ReservationAdvice     | `Search-AzGraph` (advisorresources) + Reservation Recs API | ~3s |
-| 13    | Get-OptimizationAdvice    | `Search-AzGraph` (advisorresources)       | ~3s   |
-| 14    | Get-BudgetStatus          | REST: Consumption Budgets API (per sub)   | ~3s   |
-| 15    | Get-SavingsRealized       | REST: Cost Management (ActualCost + AmortizedCost) + ARG; skipped if no commitments detected in stage 10 | ~5s |
-| 16    | Get-TagRecommendations    | Local comparison + tag location map       | <1s   |
-| 17    | Get-PolicyInventory       | ARM REST API (all effective) + Resource Graph compliance | ~3s |
-| 18    | Get-PolicyRecommendations | Local comparison (no API call)            | <1s   |
-| 19    | Get-BillingStructure      | REST: Billing Accounts/Profiles/Sections  | ~3s   |
+| 12    | Get-IdleVMs               | REST: Azure Monitor Metrics (CPU + Network, 14-day) | ~5-15s |
+| 13    | Get-StorageTierAdvice     | REST: Azure Monitor Metrics (Transactions + Capacity, 30-day) | ~5-15s |
+| 14    | Get-ReservationAdvice     | `Search-AzGraph` (advisorresources) + Reservation Recs API | ~3s |
+| 15    | Get-OptimizationAdvice    | `Search-AzGraph` (advisorresources)       | ~3s   |
+| 16    | Get-BudgetStatus          | REST: Consumption Budgets API (per sub)   | ~3s   |
+| 17    | Get-SavingsRealized       | REST: Cost Management (ActualCost + AmortizedCost) + ARG; skipped if no commitments detected in stage 10 | ~5s |
+| 18    | Get-TagRecommendations    | Local comparison + tag location map       | <1s   |
+| 19    | Get-PolicyInventory       | ARM REST API (all effective) + Resource Graph compliance | ~3s |
+| 20    | Get-PolicyRecommendations | Local comparison (no API call)            | <1s   |
+| 21    | Get-BillingStructure      | REST: Billing Accounts/Profiles/Sections  | ~3s   |
 
 > **Performance Note:** The tool is adaptive — it detects tenant size and
 > optimizes accordingly. Cost queries try management-group scope first
@@ -247,6 +255,10 @@ a `DispatcherTimer` so the UI updates between stages.
 | Contract type quotaId fallback | Infers EA/MCA/PAYGO/Internal from ARM subscription quotaId when Billing API is inaccessible |
 | 4-column optimization grids | Each recommendation shows Actual (MTD), Forecast, With-X savings, and Annual Savings |
 | Pure WPF bar chart | Cost trend drawn with Canvas + Rectangles — no NuGet charting libraries needed |
+| Idle VM detection via Azure Monitor | 14-day avg CPU + total network bytes per running VM; idle (<5% CPU, <1MB/day net) and underutilized (<10%) classification |
+| Storage tier advice via Azure Monitor | 30-day transaction count + blob capacity per hot-tier storage account; recommend Cool (<1000 tx) or Archive (<100 tx) |
+| Resources tab (static links) | Curated FinOps links populated at dashboard build time — no API calls needed; includes orphaned resources workbook |
+| Tag removal retry with backoff | 500 errors during tag removal trigger up to 3 retries with 1s/2s exponential backoff |
 | Tag deployment via ARM Tags API | PATCH merge to add/update; PATCH delete to remove tags; preserves other existing tags |
 | Tag removal via ARM Tags API | Delete operation removes a single tag by name without affecting other tags |
 | Policy deployment via ARM PUT | Deploy recommended FinOps policies with user-selected effect (Audit/Deny/etc.) |
@@ -332,6 +344,10 @@ The Azure FinOps Multitool is the foundation that makes that possible: a proven,
 - [x] ~~Dev/Test subscription inclusion~~ — Dev/Test subs are no longer excluded from scans
 - [x] ~~Inline tag management~~ — Add/Remove buttons directly in the tag recommendations grid
 - [x] ~~Inline policy management~~ — Deploy/Unassign buttons directly in the policy recommendations grid
+- [x] ~~Idle VM detection~~ — 14-day Azure Monitor metrics flag running VMs with <5% CPU and minimal network
+- [x] ~~Storage tier optimization~~ — Hot-tier storage accounts flagged for Cool/Archive migration
+- [x] ~~Resources tab~~ — Curated links to FinOps Framework, Azure Workbooks, orphaned resources workbook
+- [x] ~~Tag Inventory Remove button~~ — Delete any tag directly from the Tag Inventory grid
 
 ---
 
