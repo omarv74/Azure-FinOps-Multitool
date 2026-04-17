@@ -3441,157 +3441,91 @@ function Export-PowerBIData {
     Add-Type -AssemblyName System.IO.Compression
 
     $csvFiles = Get-ChildItem -Path $exportDir -Filter '*.csv'
-    $numericPattern = '^(ActualMTD|Forecast|Cost|Amount|ActualSpend|PercentUsed|AnnualSavings|AvgUtilization|MinUtilization|MaxUtilization|ReservedHours|UsedHours|ResourceCount)$'
+    $numericCols = @('ActualMTD','Forecast','Cost','Amount','ActualSpend','PercentUsed','AnnualSavings','AvgUtilization','MinUtilization','MaxUtilization','ReservedHours','UsedHours','ResourceCount')
+    $exportDirEscaped = $exportDir -replace '\\', '\\\\'
 
-    # Build table definitions dynamically from exported CSVs
-    $modelTables = [System.Collections.Generic.List[hashtable]]::new()
+    # Build DataModelSchema JSON manually to avoid ConvertTo-Json issues
+    $sb = [System.Text.StringBuilder]::new(8192)
+    [void]$sb.Append('{"name":"Model","compatibilityLevel":1550,"model":{"culture":"en-US","dataAccessOptions":{"legacyRedirects":true,"returnErrorValuesAsNull":true},"defaultPowerBIDataSourceVersion":"powerBI_V3","sourceQueryCulture":"en-US","tables":[')
 
-    # CsvFolderPath parameter (user can update when opening template)
-    $modelTables.Add(@{
-        name = 'CsvFolderPath'
-        annotations = @(
-            @{ name = 'PBI_NavigationStepName'; value = 'Navigation' }
-            @{ name = 'PBI_ResultType'; value = 'Text' }
-        )
-        columns = @(@{
-            name         = 'CsvFolderPath'
-            dataType     = 'string'
-            isHidden     = $true
-            sourceColumn = 'CsvFolderPath'
-            summarizeBy  = 'none'
-            lineageTag   = [guid]::NewGuid().ToString()
-        })
-        lineageTag = [guid]::NewGuid().ToString()
-        partitions = @(@{
-            name   = 'CsvFolderPath'
-            mode   = 'import'
-            source = @{
-                type       = 'm'
-                expression = '"' + $exportDir + '" meta [IsParameterQuery=true, Type="Text", IsParameterQueryRequired=true]'
-            }
-        })
-    })
+    # CsvFolderPath parameter table
+    $paramGuid = [guid]::NewGuid().ToString()
+    $paramColGuid = [guid]::NewGuid().ToString()
+    [void]$sb.Append('{"name":"CsvFolderPath","lineageTag":"' + $paramGuid + '","columns":[{"name":"CsvFolderPath","dataType":"string","isHidden":true,"sourceColumn":"CsvFolderPath","lineageTag":"' + $paramColGuid + '"}],"partitions":[{"name":"CsvFolderPath","mode":"import","source":{"type":"m","expression":["\"' + $exportDirEscaped + '\" meta [IsParameterQuery=true, Type=\"Text\", IsParameterQueryRequired=true]"]}}],"annotations":[{"name":"PBI_ResultType","value":"Text"},{"name":"PBI_NavigationStepName","value":"Navigation"}]}')
 
-    # Data tables — read CSV headers to build column defs
+    # Data tables from CSVs
     foreach ($csv in $csvFiles) {
         $tblName = [System.IO.Path]::GetFileNameWithoutExtension($csv.Name)
         $headerLine = Get-Content $csv.FullName -First 1
         $headers = ($headerLine -replace '"','') -split ','
+        $tblGuid = [guid]::NewGuid().ToString()
 
-        $cols = @()
+        [void]$sb.Append(',{"name":"' + $tblName + '","lineageTag":"' + $tblGuid + '","columns":[')
+        $colFragments = @()
         $typeCasts = @()
         foreach ($h in $headers) {
-            $isNum = $h -match $numericPattern
-            $cols += @{
-                name         = $h
-                dataType     = if ($isNum) { 'double' } else { 'string' }
-                sourceColumn = $h
-                summarizeBy  = if ($isNum) { 'sum' } else { 'none' }
-                lineageTag   = [guid]::NewGuid().ToString()
-            }
-            if ($isNum) { $typeCasts += '{' + "`"$h`"" + ', type number}' }
+            $cGuid = [guid]::NewGuid().ToString()
+            $isNum = $h -in $numericCols
+            $dt = if ($isNum) { 'double' } else { 'string' }
+            $sum = if ($isNum) { 'sum' } else { 'none' }
+            $colFragments += '{"name":"' + $h + '","dataType":"' + $dt + '","sourceColumn":"' + $h + '","summarizeBy":"' + $sum + '","lineageTag":"' + $cGuid + '"}'
+            if ($isNum) { $typeCasts += '{\"' + $h + '\", type number}' }
         }
+        [void]$sb.Append($colFragments -join ',')
+        [void]$sb.Append('],')
 
-        # Build M query expression lines
-        $mLines = @(
-            'let'
-            '    Source = Csv.Document(File.Contents(CsvFolderPath & "\' + $tblName + '.csv"), [Delimiter=",", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),'
-            '    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])'
-        )
+        # Partition with M expression
+        $mExpr = @()
+        $mExpr += '"let"'
         if ($typeCasts.Count -gt 0) {
-            $mLines[2] += ','
+            $mExpr += '"    Source = Csv.Document(File.Contents(CsvFolderPath & \"\\\\' + $tblName + '.csv\"), [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"'
+            $mExpr += '"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true]),"'
             $castStr = $typeCasts -join ', '
-            $mLines += "    Typed = Table.TransformColumnTypes(Headers, {$castStr})"
-            $mLines += 'in'
-            $mLines += '    Typed'
+            $mExpr += '"    Typed = Table.TransformColumnTypes(Headers, {' + $castStr + '})"'
+            $mExpr += '"in"'
+            $mExpr += '"    Typed"'
         } else {
-            $mLines += 'in'
-            $mLines += '    Headers'
+            $mExpr += '"    Source = Csv.Document(File.Contents(CsvFolderPath & \"\\\\' + $tblName + '.csv\"), [Delimiter=\",\", Encoding=65001, QuoteStyle=QuoteStyle.Csv]),"'
+            $mExpr += '"    Headers = Table.PromoteHeaders(Source, [PromoteAllScalars=true])"'
+            $mExpr += '"in"'
+            $mExpr += '"    Headers"'
         }
 
-        $modelTables.Add(@{
-            name       = $tblName
-            columns    = $cols
-            lineageTag = [guid]::NewGuid().ToString()
-            partitions = @(@{
-                name   = $tblName
-                mode   = 'import'
-                source = @{ type = 'm'; expression = $mLines }
-            })
-        })
+        [void]$sb.Append('"partitions":[{"name":"' + $tblName + '","mode":"import","source":{"type":"m","expression":[' + ($mExpr -join ',') + ']}}]}')
     }
 
-    # Relationships (SubscriptionId links)
-    $rels = @()
-    $tblNames = $modelTables | ForEach-Object { $_.name }
+    [void]$sb.Append('],') # end tables
+
+    # Relationships
+    $tblNames = @('CsvFolderPath') + @($csvFiles | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) })
+    $relFragments = @()
     $subIdTables = @('Budgets','OrphanedResources','AHBOpportunities')
     foreach ($ft in $subIdTables) {
         if ($ft -in $tblNames -and 'SubscriptionCosts' -in $tblNames) {
-            $rels += @{
-                name       = [guid]::NewGuid().ToString()
-                fromTable  = $ft
-                fromColumn = 'SubscriptionId'
-                toTable    = 'SubscriptionCosts'
-                toColumn   = 'SubscriptionId'
-            }
+            $rGuid = [guid]::NewGuid().ToString()
+            $relFragments += '{"name":"' + $rGuid + '","fromTable":"' + $ft + '","fromColumn":"SubscriptionId","toTable":"SubscriptionCosts","toColumn":"SubscriptionId"}'
         }
     }
+    [void]$sb.Append('"relationships":[' + ($relFragments -join ',') + '],')
+    [void]$sb.Append('"annotations":[{"name":"PBI_QueryGroup","value":"{}"},{"name":"PBIDesktopVersion","value":"2.138.0.0"}]}}')
 
-    # Build DataModelSchema
-    $schema = @{
-        name               = 'Model'
-        compatibilityLevel = 1550
-        model              = @{
-            culture                         = 'en-US'
-            defaultPowerBIDataSourceVersion = 'powerBI_V3'
-            tables                          = @($modelTables)
-            relationships                   = $rels
-        }
-    }
-    $modelJson = $schema | ConvertTo-Json -Depth 20
+    $modelJson = $sb.ToString()
 
-    # Create .pbit ZIP
+    # Clone skeleton .pbit and inject our DataModelSchema
+    $skelPath = Join-Path $PSScriptRoot 'gui' 'skeleton.pbit'
     $pbitPath = Join-Path $exportDir 'FinOps-Report.pbit'
-    $zip = [System.IO.Compression.ZipFile]::Open($pbitPath, [System.IO.Compression.ZipArchiveMode]::Create)
+    Copy-Item $skelPath $pbitPath -Force
 
+    $unicodeNoBom = [System.Text.UnicodeEncoding]::new($false, $false)
+    $zip = [System.IO.Compression.ZipFile]::Open($pbitPath, [System.IO.Compression.ZipArchiveMode]::Update)
     try {
-        # [Content_Types].xml
-        $ctEntry = $zip.CreateEntry('[Content_Types].xml')
-        $sw = [System.IO.StreamWriter]::new($ctEntry.Open(), [System.Text.Encoding]::UTF8)
-        $sw.Write('<?xml version="1.0" encoding="utf-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="json" ContentType="application/json"/></Types>')
+        $dmEntry = $zip.Entries | Where-Object { $_.Name -eq 'DataModelSchema' }
+        $dmName = $dmEntry.FullName
+        $dmEntry.Delete()
+        $newDm = $zip.CreateEntry($dmName)
+        $sw = [System.IO.StreamWriter]::new($newDm.Open(), $unicodeNoBom)
+        $sw.Write($modelJson)
         $sw.Close()
-
-        # DataModelSchema (UTF-16LE with BOM)
-        $dmEntry = $zip.CreateEntry('DataModelSchema')
-        $dmStream = $dmEntry.Open()
-        $enc = [System.Text.Encoding]::Unicode
-        $bom = $enc.GetPreamble()
-        $dmBytes = $enc.GetBytes($modelJson)
-        $dmStream.Write($bom, 0, $bom.Length)
-        $dmStream.Write($dmBytes, 0, $dmBytes.Length)
-        $dmStream.Close()
-
-        # DiagramLayout
-        $dlEntry = $zip.CreateEntry('DiagramLayout')
-        $sw2 = [System.IO.StreamWriter]::new($dlEntry.Open(), [System.Text.Encoding]::UTF8)
-        $sw2.Write('{"diagrams":[]}')
-        $sw2.Close()
-
-        # Metadata
-        $mdEntry = $zip.CreateEntry('Metadata')
-        $sw3 = [System.IO.StreamWriter]::new($mdEntry.Open(), [System.Text.Encoding]::UTF8)
-        $sw3.Write('{"version":"1.0","creator":"Azure FinOps Multitool"}')
-        $sw3.Close()
-
-        # SecurityBindings (empty)
-        $sbEntry = $zip.CreateEntry('SecurityBindings')
-        $sbEntry.Open().Close()
-
-        # Version
-        $vEntry = $zip.CreateEntry('Version')
-        $sw4 = [System.IO.StreamWriter]::new($vEntry.Open(), [System.Text.Encoding]::UTF8)
-        $sw4.Write('1.0')
-        $sw4.Close()
     } finally {
         $zip.Dispose()
     }
