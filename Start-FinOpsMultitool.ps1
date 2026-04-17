@@ -368,7 +368,7 @@ $controls = @(
     # Guidance
     'GuidanceScorePanel', 'ActionPlanSubtitle', 'ActionPlanPanel',
     'UnderstandPanel', 'QuantifyPanel', 'OptimizePanel',
-    'PersonasPanel', 'ReferencesPanel',
+    'PersonasPanel',
     # Policy
     'PolicyCountText', 'PolicyComplianceText', 'PolicyNonCompliantText',
     'PolicyRecsCountText', 'PolicyInventoryGrid', 'PolicyComplianceGrid',
@@ -1699,35 +1699,6 @@ function Populate-GuidanceTab {
 
         $script:PersonasPanel.Children.Add($personaTb) | Out-Null
     }
-
-    # =====================================================================
-    # REFERENCES (rich formatted, selectable)
-    # =====================================================================
-    $script:ReferencesPanel.Children.Clear()
-    $refs = @(
-        @{ Label = 'FinOps Foundation Framework'; Url = 'https://www.finops.org/framework/' }
-        @{ Label = 'FinOps Foundation Maturity Model'; Url = 'https://www.finops.org/framework/maturity-model/' }
-        @{ Label = 'FinOps Foundation Personas'; Url = 'https://www.finops.org/framework/personas/' }
-        @{ Label = 'Azure FinOps Toolkit'; Url = 'https://aka.ms/finops/toolkit' }
-        @{ Label = 'Microsoft Cloud Adoption Framework - Tagging'; Url = 'https://aka.ms/tagging' }
-        @{ Label = 'Azure Cost Management'; Url = 'https://learn.microsoft.com/en-us/azure/cost-management-billing/' }
-        @{ Label = 'Azure Advisor'; Url = 'https://learn.microsoft.com/en-us/azure/advisor/' }
-        @{ Label = 'Azure Hybrid Benefit'; Url = 'https://learn.microsoft.com/en-us/azure/azure-sql/azure-hybrid-benefit' }
-        @{ Label = 'Azure Reservations'; Url = 'https://learn.microsoft.com/en-us/azure/cost-management-billing/reservations/' }
-        @{ Label = 'Azure Policy Built-in Definitions'; Url = 'https://learn.microsoft.com/en-us/azure/governance/policy/samples/built-in-policies' }
-    )
-    foreach ($ref in $refs) {
-        $refTb = [System.Windows.Controls.TextBox]::new()
-        $refTb.Text = "$($ref.Label): $($ref.Url)"
-        $refTb.FontSize = 12
-        $refTb.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString('#0078D4')
-        $refTb.IsReadOnly = $true
-        $refTb.BorderThickness = [System.Windows.Thickness]::new(0)
-        $refTb.Background = [System.Windows.Media.Brushes]::Transparent
-        $refTb.Cursor = [System.Windows.Input.Cursors]::IBeam
-        $refTb.Margin = [System.Windows.Thickness]::new(0, 0, 0, 2)
-        $script:ReferencesPanel.Children.Add($refTb) | Out-Null
-    }
 }
 
 #-----------------------------------------------------------------------
@@ -2782,58 +2753,63 @@ function Populate-ResourcesTab {
 
     # FinOps Framework
     $script:ResourcesFinOpsPanel.Children.Clear()
-    @(
-        @('FinOps Foundation', 'https://www.finops.org/', 'The FinOps Foundation — framework, community, certifications.')
-        @('FinOps with Azure', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/finops/', 'Microsoft Learn — FinOps principles applied to Azure.')
-        @('Cloud Adoption Framework — Cost Management', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/manage/azure-server-management/cost-management', 'CAF discipline for managing cloud costs at enterprise scale.')
-        @('FinOps Toolkit (GitHub)', 'https://github.com/microsoft/finops-toolkit', 'Open-source Power BI reports, workbooks, and Bicep modules from Microsoft.')
-    ) | ForEach-Object {
-        $script:ResourcesFinOpsPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    $finopsLinks = @(
+        ,@('FinOps Foundation', 'https://www.finops.org/', 'The FinOps Foundation — framework, community, certifications.')
+        ,@('FinOps with Azure', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/finops/', 'Microsoft Learn — FinOps principles applied to Azure.')
+        ,@('Cloud Adoption Framework — Cost Management', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/manage/azure-server-management/cost-management', 'CAF discipline for managing cloud costs at enterprise scale.')
+        ,@('FinOps Toolkit (GitHub)', 'https://github.com/microsoft/finops-toolkit', 'Open-source Power BI reports, workbooks, and Bicep modules from Microsoft.')
+    )
+    foreach ($item in $finopsLinks) {
+        $script:ResourcesFinOpsPanel.Children.Add((New-LinkBlock -Text $item[0] -Url $item[1] -Description $item[2])) | Out-Null
     }
 
     # Cost Management
     $script:ResourcesCostPanel.Children.Clear()
-    @(
-        @('Azure Cost Management Overview', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/overview-cost-management', 'Core service for analyzing, monitoring, and optimizing Azure costs.')
-        @('Azure Advisor — Cost Recommendations', 'https://learn.microsoft.com/en-us/azure/advisor/advisor-cost-recommendations', 'Automated right-sizing, shutdown, and purchase recommendations.')
-        @('Azure Pricing Calculator', 'https://azure.microsoft.com/en-us/pricing/calculator/', 'Estimate costs before deploying resources.')
-        @('Cost Management Best Practices', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-mgt-best-practices', 'Official best practices for Azure cost management.')
-    ) | ForEach-Object {
-        $script:ResourcesCostPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    $costLinks = @(
+        ,@('Azure Cost Management Overview', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/overview-cost-management', 'Core service for analyzing, monitoring, and optimizing Azure costs.')
+        ,@('Azure Advisor — Cost Recommendations', 'https://learn.microsoft.com/en-us/azure/advisor/advisor-cost-recommendations', 'Automated right-sizing, shutdown, and purchase recommendations.')
+        ,@('Azure Pricing Calculator', 'https://azure.microsoft.com/en-us/pricing/calculator/', 'Estimate costs before deploying resources.')
+        ,@('Cost Management Best Practices', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/cost-mgt-best-practices', 'Official best practices for Azure cost management.')
+    )
+    foreach ($item in $costLinks) {
+        $script:ResourcesCostPanel.Children.Add((New-LinkBlock -Text $item[0] -Url $item[1] -Description $item[2])) | Out-Null
     }
 
     # Rate Optimization
     $script:ResourcesRatePanel.Children.Clear()
-    @(
-        @('Azure Reservations', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/reservations/save-compute-costs-reservations', 'Lock in discounted rates for VMs, SQL, Cosmos, and more (30-72% savings).')
-        @('Azure Savings Plans', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/savings-plan/', 'Flexible hourly commitment across compute services (15-65% savings).')
-        @('Azure Hybrid Benefit', 'https://learn.microsoft.com/en-us/azure/virtual-machines/windows/hybrid-use-benefit-licensing', 'Use existing Windows/SQL licenses to save 40-85% on Azure VMs and SQL.')
-        @('Dev/Test Pricing', 'https://azure.microsoft.com/en-us/pricing/dev-test/', 'Discounted rates for dev/test workloads — no Windows license charges.')
-    ) | ForEach-Object {
-        $script:ResourcesRatePanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    $rateLinks = @(
+        ,@('Azure Reservations', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/reservations/save-compute-costs-reservations', 'Lock in discounted rates for VMs, SQL, Cosmos, and more (30-72% savings).')
+        ,@('Azure Savings Plans', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/savings-plan/', 'Flexible hourly commitment across compute services (15-65% savings).')
+        ,@('Azure Hybrid Benefit', 'https://learn.microsoft.com/en-us/azure/virtual-machines/windows/hybrid-use-benefit-licensing', 'Use existing Windows/SQL licenses to save 40-85% on Azure VMs and SQL.')
+        ,@('Dev/Test Pricing', 'https://azure.microsoft.com/en-us/pricing/dev-test/', 'Discounted rates for dev/test workloads — no Windows license charges.')
+    )
+    foreach ($item in $rateLinks) {
+        $script:ResourcesRatePanel.Children.Add((New-LinkBlock -Text $item[0] -Url $item[1] -Description $item[2])) | Out-Null
     }
 
     # Governance
     $script:ResourcesGovernancePanel.Children.Clear()
-    @(
-        @('Azure Policy Overview', 'https://learn.microsoft.com/en-us/azure/governance/policy/overview', 'Enforce organizational standards and assess compliance at scale.')
-        @('Tagging Strategy', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-tagging', 'CAF tagging best practices for cost allocation and governance.')
-        @('Management Group Hierarchy', 'https://learn.microsoft.com/en-us/azure/governance/management-groups/overview', 'Organize subscriptions and apply policies at scale.')
-        @('Azure Budgets', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets', 'Set spending thresholds and receive alerts when costs exceed targets.')
-    ) | ForEach-Object {
-        $script:ResourcesGovernancePanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    $govLinks = @(
+        ,@('Azure Policy Overview', 'https://learn.microsoft.com/en-us/azure/governance/policy/overview', 'Enforce organizational standards and assess compliance at scale.')
+        ,@('Tagging Strategy', 'https://learn.microsoft.com/en-us/azure/cloud-adoption-framework/ready/azure-best-practices/resource-tagging', 'CAF tagging best practices for cost allocation and governance.')
+        ,@('Management Group Hierarchy', 'https://learn.microsoft.com/en-us/azure/governance/management-groups/overview', 'Organize subscriptions and apply policies at scale.')
+        ,@('Azure Budgets', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/tutorial-acm-create-budgets', 'Set spending thresholds and receive alerts when costs exceed targets.')
+    )
+    foreach ($item in $govLinks) {
+        $script:ResourcesGovernancePanel.Children.Add((New-LinkBlock -Text $item[0] -Url $item[1] -Description $item[2])) | Out-Null
     }
 
     # Workbooks & Tools
     $script:ResourcesToolsPanel.Children.Clear()
-    @(
-        @('Orphaned Resources Workbook', 'https://github.com/dolevshor/azure-orphan-resources', 'Community Azure Workbook showing orphaned resources across subscriptions.')
-        @('Azure Optimization Engine (AOE)', 'https://github.com/helderpinto/AzureOptimizationEngine', 'Automated optimization recommendations engine using Log Analytics.')
-        @('Cost Management Labs', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/quick-acm-cost-analysis', 'Hands-on quickstart: analyze costs in the Azure portal.')
-        @('Azure Charts', 'https://azurecharts.com/', 'Visual changelog of Azure services, regions, and updates.')
-        @('Azure FinOps Multitool (this app)', 'https://github.com/z-larsen/Azure-FinOps-Multitool', 'Source code and documentation for this scanner.')
-    ) | ForEach-Object {
-        $script:ResourcesToolsPanel.Children.Add((New-LinkBlock -Text $_[0] -Url $_[1] -Description $_[2])) | Out-Null
+    $toolLinks = @(
+        ,@('Orphaned Resources Workbook', 'https://github.com/dolevshor/azure-orphan-resources', 'Community Azure Workbook showing orphaned resources across subscriptions.')
+        ,@('Azure Optimization Engine (AOE)', 'https://github.com/helderpinto/AzureOptimizationEngine', 'Automated optimization recommendations engine using Log Analytics.')
+        ,@('Cost Management Labs', 'https://learn.microsoft.com/en-us/azure/cost-management-billing/costs/quick-acm-cost-analysis', 'Hands-on quickstart: analyze costs in the Azure portal.')
+        ,@('Azure Charts', 'https://azurecharts.com/', 'Visual changelog of Azure services, regions, and updates.')
+        ,@('Azure FinOps Multitool (this app)', 'https://github.com/z-larsen/Azure-FinOps-Multitool', 'Source code and documentation for this scanner.')
+    )
+    foreach ($item in $toolLinks) {
+        $script:ResourcesToolsPanel.Children.Add((New-LinkBlock -Text $item[0] -Url $item[1] -Description $item[2])) | Out-Null
     }
 }
 

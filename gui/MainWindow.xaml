@@ -698,10 +698,6 @@
                             <!-- Key Personas -->
                             <TextBlock Text="FinOps Personas to Engage" Style="{StaticResource SectionHeader}"/>
                             <StackPanel x:Name="PersonasPanel" Margin="0,0,0,10"/>
-
-                            <!-- References -->
-                            <TextBlock Text="References" Style="{StaticResource SectionHeader}"/>
-                            <StackPanel x:Name="ReferencesPanel" Margin="0,0,0,10"/>
                         </StackPanel>
                     </ScrollViewer>
                 </TabItem>
