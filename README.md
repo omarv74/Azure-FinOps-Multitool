@@ -4,7 +4,7 @@
 ![PowerShell 7.0+](https://img.shields.io/badge/PowerShell-7.0%2B-blue?logo=powershell&logoColor=white)
 ![Azure Az Modules](https://img.shields.io/badge/Azure-Az%20Modules-0078D4?logo=microsoftazure&logoColor=white)
 ![License MIT](https://img.shields.io/badge/License-MIT-green)
-![Version 2.0.0](https://img.shields.io/badge/Version-2.0.0-brightgreen)
+![Version 2.0.1](https://img.shields.io/badge/Version-2.0.1-brightgreen)
 
 A PowerShell WPF application that scans an Azure tenant and provides a
 single-pane-of-glass view of costs, tagging health, optimization
@@ -422,6 +422,19 @@ Tag variations are recognized (e.g., `cost-center`, `cc`, `bu`, `dept`, `applica
 ---
 
 ## Changelog
+
+### v2.0.1
+
+**New features:**
+- **Subscription selector dialog** — WPF popup after tenant login lets you choose which subscriptions to scan; auto-skips for tenants with 5 or fewer subscriptions; Select All / Select None buttons; safe cancel defaults to scanning everything
+
+**Bug fixes & improvements:**
+- **Cross-tenant billing fix** — queries all scanned subscriptions for billing account IDs (not just the first 5), normalizes billing account IDs by extracting the name segment, and skips the billing section gracefully when no accounts resolve
+- **MCA commitment utilization** — resolves billing profiles for MCA agreements so reserved instance and savings plan queries use the correct profile scope
+- **Budget section null-guards** — prevents warnings when BudgetGrid or ScorecardMessage XAML elements are missing
+- **Granular progress indicators** — 7 scan modules now update status at ~10% intervals instead of every 25th subscription, giving much smoother progress feedback on large tenants
+- **Idle VM progress** — Get-IdleVMs now reports per-VM progress during metric queries
+- **Savings realized progress** — Get-SavingsRealized now reports progress (previously had no updates)
 
 ### v2.0.0 — Major Release
 
