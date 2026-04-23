@@ -59,7 +59,15 @@ resources
     $networkThreshold = 1048576  # < 1 MB/day total network = idle (14d * 1MB = 14MB)
     $networkThreshold14d = $networkThreshold * 14
 
+    $vmCount = $runningVMs.Count
+    $vmIdx = 0
     foreach ($vm in $runningVMs) {
+        $vmIdx++
+        if ($vmCount -gt 10 -and ($vmIdx -eq 1 -or $vmIdx % [math]::Max(1, [int]($vmCount / 10)) -eq 0)) {
+            if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                Update-ScanStatus "Checking VM metrics ($vmIdx/$vmCount VMs)..."
+            }
+        }
         $scope = "/subscriptions/$($vm.subscriptionId)/resourceGroups/$($vm.resourceGroup)/providers/Microsoft.Compute/virtualMachines/$($vm.name)"
         try {
             # Query CPU + Network In + Network Out in a single call

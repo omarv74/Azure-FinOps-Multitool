@@ -2420,9 +2420,14 @@ function Populate-BillingTab {
 # BUDGET STATUS POPULATION
 #-----------------------------------------------------------------------
 function Populate-BudgetSection {
+    # BudgetSummaryText / BudgetGrid were removed from the XAML (budget
+    # management lives on the Budgets tab now).  Skip silently when the
+    # legacy overview elements no longer exist.
+    if (-not $script:BudgetSummaryText -and -not $script:BudgetGrid) { return }
+
     $d = $script:scanData
     if (-not $d.Budgets) {
-        $script:BudgetSummaryText.Text = 'Budget data not available.'
+        if ($script:BudgetSummaryText) { $script:BudgetSummaryText.Text = 'Budget data not available.' }
         return
     }
 
@@ -2431,25 +2436,27 @@ function Populate-BudgetSection {
     if ($b.SubsWithoutBudget -gt 0) {
         $riskText += " | $($b.SubsWithoutBudget) subs have NO budget configured"
     }
-    $script:BudgetSummaryText.Text = $riskText
+    if ($script:BudgetSummaryText) { $script:BudgetSummaryText.Text = $riskText }
 
-    if ($b.Budgets.Count -gt 0) {
-        $rows = [System.Collections.Generic.List[PSCustomObject]]::new()
-        foreach ($budget in $b.Budgets) {
-            [void]$rows.Add([PSCustomObject]@{
-                Subscription = $budget.Subscription
-                'Budget Name' = $budget.BudgetName
-                'Budget Amount' = ([double]$budget.Amount).ToString('N2')
-                'Actual Spend' = ([double]$budget.ActualSpend).ToString('N2')
-                '% Used' = "$($budget.PctUsed)%"
-                'Forecast' = ([double]$budget.Forecast).ToString('N2')
-                'Risk' = $budget.Risk
-                'Currency' = $budget.Currency
-            })
+    if ($script:BudgetGrid) {
+        if ($b.Budgets.Count -gt 0) {
+            $rows = [System.Collections.Generic.List[PSCustomObject]]::new()
+            foreach ($budget in $b.Budgets) {
+                [void]$rows.Add([PSCustomObject]@{
+                    Subscription = $budget.Subscription
+                    'Budget Name' = $budget.BudgetName
+                    'Budget Amount' = ([double]$budget.Amount).ToString('N2')
+                    'Actual Spend' = ([double]$budget.ActualSpend).ToString('N2')
+                    '% Used' = "$($budget.PctUsed)%"
+                    'Forecast' = ([double]$budget.Forecast).ToString('N2')
+                    'Risk' = $budget.Risk
+                    'Currency' = $budget.Currency
+                })
+            }
+            $script:BudgetGrid.ItemsSource = @($rows | Sort-Object { [double]($_.'% Used' -replace '%','') } -Descending)
+        } else {
+            $script:BudgetGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No budgets configured. Set up Azure Budgets to track spend against targets.' })
         }
-        $script:BudgetGrid.ItemsSource = @($rows | Sort-Object { [double]($_.'% Used' -replace '%','') } -Descending)
-    } else {
-        $script:BudgetGrid.ItemsSource = @([PSCustomObject]@{ Status = 'No budgets configured. Set up Azure Budgets to track spend against targets.' })
     }
 }
 
@@ -3227,6 +3234,125 @@ function Populate-Scorecard {
     }
 
     $script:ScorecardGrid.ItemsSource = @($rows | Sort-Object { [double]($_.'Actual (MTD)' -replace '[^0-9.]','') } -Descending)
+}
+
+# -- Subscription Selector Dialog ----------------------------------------
+# Shows a popup with checkboxes for each subscription. Returns only selected subs.
+# Called after tenant connection so users can narrow the scan scope.
+function Show-SubscriptionSelector {
+    param(
+        [Parameter(Mandatory)][object[]]$Subscriptions,
+        [object[]]$SkippedSubs,
+        [System.Windows.Window]$ParentWindow
+    )
+
+    $subCount = $Subscriptions.Count
+    # For small tenants (≤5 subs), skip the selector — just scan everything
+    if ($subCount -le 5) { return $Subscriptions }
+
+    $dlgHeight = [math]::Min(560, 220 + ($subCount * 26))
+
+    $dlgXaml = @"
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        Title="Select Subscriptions to Scan" Width="560" Height="$dlgHeight"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResizeWithGrip" Background="#F3F3F3"
+        MinHeight="300" MinWidth="400">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" FontSize="16" FontWeight="SemiBold" Foreground="#333" Margin="0,0,0,8">
+            <Run Text="$subCount production subscriptions found"/>
+        </TextBlock>
+        <TextBlock Grid.Row="1" Text="Uncheck any subscriptions you want to exclude from the scan."
+                   FontSize="12" Foreground="#666" Margin="0,0,0,12"/>
+
+        <Border Grid.Row="2" BorderBrush="#DDD" BorderThickness="1" CornerRadius="4" Background="White">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="6">
+                <StackPanel x:Name="SubListPanel"/>
+            </ScrollViewer>
+        </Border>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,10,0,8">
+            <Button x:Name="SelectAllBtn" Content="Select All" Width="90" Height="28" Margin="0,0,8,0"
+                    Background="White" BorderBrush="#CCC" Foreground="#333" FontSize="11.5" Cursor="Hand"/>
+            <Button x:Name="SelectNoneBtn" Content="Select None" Width="90" Height="28"
+                    Background="White" BorderBrush="#CCC" Foreground="#333" FontSize="11.5" Cursor="Hand"/>
+            <TextBlock x:Name="CountLabel" Text="" FontSize="11.5" Foreground="#666"
+                       VerticalAlignment="Center" Margin="16,0,0,0"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button x:Name="CancelBtn" Content="Cancel" Width="90" Height="32" Margin="0,0,10,0"
+                    Background="White" BorderBrush="#CCC" Foreground="#333" FontSize="12.5" Cursor="Hand"/>
+            <Button x:Name="OkBtn" Content="Scan Selected" Width="120" Height="32"
+                    Background="#0078D4" Foreground="White" BorderBrush="#0078D4" FontSize="12.5"
+                    FontWeight="SemiBold" Cursor="Hand"/>
+        </StackPanel>
+    </Grid>
+</Window>
+"@
+
+    $reader = [System.Xml.XmlReader]::Create([System.IO.StringReader]::new($dlgXaml))
+    $dlgWin = [System.Windows.Markup.XamlReader]::Load($reader)
+    if ($ParentWindow) { $dlgWin.Owner = $ParentWindow }
+
+    $subListPanel = $dlgWin.FindName('SubListPanel')
+    $selectAllBtn = $dlgWin.FindName('SelectAllBtn')
+    $selectNoneBtn = $dlgWin.FindName('SelectNoneBtn')
+    $countLabel   = $dlgWin.FindName('CountLabel')
+    $cancelBtn    = $dlgWin.FindName('CancelBtn')
+    $okBtn        = $dlgWin.FindName('OkBtn')
+
+    # Build checkbox list
+    $checkboxes = [System.Collections.Generic.List[System.Windows.Controls.CheckBox]]::new()
+    foreach ($sub in ($Subscriptions | Sort-Object Name)) {
+        $cb = [System.Windows.Controls.CheckBox]::new()
+        $cb.Content = "$($sub.Name)  ($($sub.Id))"
+        $cb.IsChecked = $true
+        $cb.Tag = $sub
+        $cb.Margin = [System.Windows.Thickness]::new(4, 3, 4, 3)
+        $cb.FontSize = 12
+        [void]$checkboxes.Add($cb)
+        [void]$subListPanel.Children.Add($cb)
+    }
+
+    # Update count label
+    $updateCount = {
+        $sel = ($checkboxes | Where-Object { $_.IsChecked }).Count
+        $countLabel.Text = "$sel of $subCount selected"
+        $okBtn.IsEnabled = ($sel -gt 0)
+    }
+    & $updateCount
+
+    foreach ($cb in $checkboxes) {
+        $cb.Add_Checked($updateCount)
+        $cb.Add_Unchecked($updateCount)
+    }
+
+    # Select All / None
+    $selectAllBtn.Add_Click({ foreach ($c in $checkboxes) { $c.IsChecked = $true } }.GetNewClosure())
+    $selectNoneBtn.Add_Click({ foreach ($c in $checkboxes) { $c.IsChecked = $false } }.GetNewClosure())
+
+    # OK / Cancel
+    $script:_subSelectorResult = $null
+    $okBtn.Add_Click({
+        $script:_subSelectorResult = @($checkboxes | Where-Object { $_.IsChecked } | ForEach-Object { $_.Tag })
+        $dlgWin.Close()
+    }.GetNewClosure())
+    $cancelBtn.Add_Click({ $dlgWin.Close() }.GetNewClosure())
+
+    [void]$dlgWin.ShowDialog()
+
+    # If user cancelled or closed, return all subs (don't block scan)
+    if ($null -eq $script:_subSelectorResult) { return $Subscriptions }
+    if ($script:_subSelectorResult.Count -eq 0) { return $Subscriptions }
+    return $script:_subSelectorResult
 }
 
 # -- Export Format Chooser Dialog ----------------------------------------
@@ -4258,7 +4384,8 @@ $script:scanStages = @(
         $script:scanData.AHB = Get-AHBOpportunities -Subscriptions $script:scanData.Auth.Subscriptions
     }}
     @{ Label = 'Scanning commitment utilization...';   Pct = 68;  Action = {
-        $script:scanData.Commitments = Get-CommitmentUtilization -Subscriptions $script:scanData.Auth.Subscriptions
+        $agreementType = if ($script:scanData.Contract -and $script:scanData.Contract[0].AgreementType) { $script:scanData.Contract[0].AgreementType } else { '' }
+        $script:scanData.Commitments = Get-CommitmentUtilization -Subscriptions $script:scanData.Auth.Subscriptions -AgreementType $agreementType
     }}
     @{ Label = 'Scanning orphaned resources...';       Pct = 70;  Action = {
         $script:scanData.Orphans = Get-OrphanedResources -Subscriptions $script:scanData.Auth.Subscriptions
@@ -4397,6 +4524,12 @@ $script:TenantButton.Add_Click({
         $script:scanData.Auth = Initialize-Scanner -Environment 'AzureCloud' -ParentWindow $window
         $envLabel = $script:scanData.Auth.Environment
         $subCount = $script:scanData.Auth.Subscriptions.Count
+
+        # Let user select which subscriptions to scan
+        $selected = Show-SubscriptionSelector -Subscriptions $script:scanData.Auth.Subscriptions -SkippedSubs $script:scanData.Auth.SkippedSubs -ParentWindow $window
+        $script:scanData.Auth.Subscriptions = @($selected)
+        $subCount = $script:scanData.Auth.Subscriptions.Count
+
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
         $tenantSize = if ($script:scanData.Auth.TenantSize) { " [$($script:scanData.Auth.TenantSize)]" } else { '' }
         $script:StatusText.Text = "Connected to $envLabel ($subCount subs$tenantSize). Click 'Scan' to begin."
@@ -4421,6 +4554,12 @@ $script:GovTenantButton.Add_Click({
         $script:scanData.Auth = Initialize-Scanner -Environment 'AzureUSGovernment' -ParentWindow $window
         $envLabel = $script:scanData.Auth.Environment
         $subCount = $script:scanData.Auth.Subscriptions.Count
+
+        # Let user select which subscriptions to scan
+        $selected = Show-SubscriptionSelector -Subscriptions $script:scanData.Auth.Subscriptions -SkippedSubs $script:scanData.Auth.SkippedSubs -ParentWindow $window
+        $script:scanData.Auth.Subscriptions = @($selected)
+        $subCount = $script:scanData.Auth.Subscriptions.Count
+
         $script:TenantLabel.Text = "Tenant: $($script:scanData.Auth.TenantId)  |  $($script:scanData.Auth.AccountName)  |  $envLabel"
         $tenantSize = if ($script:scanData.Auth.TenantSize) { " [$($script:scanData.Auth.TenantSize)]" } else { '' }
         $script:StatusText.Text = "Connected to $envLabel ($subCount subs$tenantSize). Click 'Scan' to begin."

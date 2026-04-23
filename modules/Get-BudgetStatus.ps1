@@ -56,9 +56,9 @@ function Get-BudgetStatus {
     $i = 0
     foreach ($sub in $subsToQuery) {
         $i++
-        if ($subCount -gt 20 -and ($i % 25 -eq 0 -or $i -eq 1)) {
+        if ($i -eq 1 -or $i -eq $subCount -or ($subCount -gt 5 -and $i % [math]::Max(1, [int]($subCount / 10)) -eq 0)) {
             if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
-                Update-ScanStatus "Querying budgets ($i/$subCount)..."
+                Update-ScanStatus "Querying budgets ($i/$subCount subs)..."
             }
         }
         try {

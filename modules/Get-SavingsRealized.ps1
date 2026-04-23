@@ -129,7 +129,15 @@ function Get-SavingsRealized {
     if ($hasCommitments -and -not $gotMgData) {
     # -- Step 1: Query amortized vs actual to find RI/SP benefit amounts --
     # The difference between ActualCost and AmortizedCost reveals commitment savings
+    $subCount = $Subscriptions.Count
+    $i = 0
     foreach ($sub in $Subscriptions) {
+        $i++
+        if ($subCount -gt 5 -and ($i -eq 1 -or $i % [math]::Max(1, [int]($subCount / 10)) -eq 0)) {
+            if (Get-Command Update-ScanStatus -ErrorAction SilentlyContinue) {
+                Update-ScanStatus "Calculating savings ($i/$subCount subs)..."
+            }
+        }
         try {
             # Get ActualCost MonthToDate
             $actualBody = @{
