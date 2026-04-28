@@ -66,6 +66,7 @@ function Get-ContractInfo {
     # -- Step 2: Try billing accounts API, filtered by inferred type -----
     try {
         $response = Invoke-AzRestMethodWithRetry -Path "/providers/Microsoft.Billing/billingAccounts?api-version=2024-04-01" -Method GET
+        if (-not $response -or -not $response.Content) { throw "Billing accounts API returned no content (HTTP $($response.StatusCode))" }
         $result = ($response.Content | ConvertFrom-Json)
 
         if ($result.value -and $result.value.Count -gt 0) {

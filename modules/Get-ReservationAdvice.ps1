@@ -122,6 +122,7 @@ advisorresources
     try {
         $rrPath = "/providers/Microsoft.Consumption/reservationRecommendations?api-version=2023-05-01&`$filter=properties/scope eq 'Shared' and properties/lookBackPeriod eq 'Last30Days'"
         $rrResp = Invoke-AzRestMethodWithRetry -Path $rrPath -Method GET
+        if (-not $rrResp -or -not $rrResp.Content) { throw "Reservation recommendation API returned no content (HTTP $($rrResp.StatusCode))" }
         $rrResult = ($rrResp.Content | ConvertFrom-Json)
 
         if ($rrResult.value) {

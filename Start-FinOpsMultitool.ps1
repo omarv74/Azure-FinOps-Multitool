@@ -106,7 +106,15 @@ function Invoke-AzRestMethodWithRetry {
         $ps.Dispose()
         $rs.Close()
 
-        if (-not $resp -or $resp.StatusCode -ne 429) { return $resp }
+        # Ensure we never return null or a response with null Content
+        if (-not $resp) {
+            $resp = [PSCustomObject]@{ StatusCode = 0; Content = $null; Headers = @{} }
+        }
+        if ($null -eq $resp.Content) {
+            $resp = [PSCustomObject]@{ StatusCode = $resp.StatusCode; Content = '{}'; Headers = if ($resp.Headers) { $resp.Headers } else { @{} } }
+        }
+
+        if ($resp.StatusCode -ne 429) { return $resp }
 
         # Parse Retry-After header or default to exponential backoff
         $retryAfter = 10
@@ -669,9 +677,9 @@ function Populate-TagsTab {
 
     # Tag summary
     if ($d.Tags) {
-        $script:TagCountText.Text     = $d.Tags.TagCount.ToString()
-        $script:TagCoverageText.Text  = "$($d.Tags.TagCoverage)%"
-        $script:UntaggedCountText.Text = $d.Tags.UntaggedCount.ToString('N0')
+        $script:TagCountText.Text     = if ($null -ne $d.Tags.TagCount) { $d.Tags.TagCount.ToString() } else { '0' }
+        $script:TagCoverageText.Text  = if ($null -ne $d.Tags.TagCoverage) { "$($d.Tags.TagCoverage)%" } else { '0%' }
+        $script:UntaggedCountText.Text = if ($null -ne $d.Tags.UntaggedCount) { $d.Tags.UntaggedCount.ToString('N0') } else { '0' }
 
         # Inventory grid - preserve all tag value casing variants for discovery
         $script:TagInventoryGrid.AutoGenerateColumns = $false
@@ -716,7 +724,7 @@ function Populate-TagsTab {
         $script:TagInventoryGrid.Columns.Add($invActionCol)
 
         $tagRows = @()
-        foreach ($entry in $d.Tags.TagNames.GetEnumerator()) {
+        foreach ($entry in $(if ($d.Tags.TagNames) { $d.Tags.TagNames.GetEnumerator() } else { @() })) {
             $allValues = @($entry.Value.Values | ForEach-Object { $_.Value })
             $values = $allValues -join ', '
             $tagRows += [PSCustomObject]@{
