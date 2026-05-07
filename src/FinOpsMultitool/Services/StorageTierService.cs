@@ -179,7 +179,10 @@ resources
 
         private static List<string> GetSubIds(IList<SubscriptionInfo> subs)
         {
-            var ids = new List<string>(); foreach (var s in subs) ids.Add(s.Id); return ids;
+            var ids = new List<string>();
+            foreach (var s in subs)
+                ids.Add(s.Id);
+            return ids;
         }
 
         private static string GetStr(JsonElement el, string prop)

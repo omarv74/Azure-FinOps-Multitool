@@ -51,7 +51,7 @@ namespace FinOpsMultitool.Services
             },
             new PolicyRecItem
             {
-                PolicyDefId   = "/providers/Microsoft.Authorization/policyDefinitions/ea3f2387-9b95-492a-a190-fcbef5-37f7",
+                PolicyDefId   = "/providers/Microsoft.Authorization/policyDefinitions/ea3f2387-9b95-492a-a190-fcbef5d37f7e",
                 DisplayName   = "Inherit a tag from the resource group if missing",
                 Category      = "Tags",
                 Pillar        = "Understand",

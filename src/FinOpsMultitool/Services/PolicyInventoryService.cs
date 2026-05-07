@@ -165,7 +165,10 @@ policyresources
 
         private static List<string> GetSubIds(IList<SubscriptionInfo> subs)
         {
-            var ids = new List<string>(); foreach (var s in subs) ids.Add(s.Id); return ids;
+            var ids = new List<string>();
+            foreach (var s in subs)
+                ids.Add(s.Id);
+            return ids;
         }
 
         private static Dictionary<string, string> BuildSubNameMap(IList<SubscriptionInfo> subs)
