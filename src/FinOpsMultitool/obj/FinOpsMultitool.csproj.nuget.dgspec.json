@@ -1,0 +1,106 @@
+{
+  "format": 1,
+  "restore": {
+    "/home/runner/work/Azure-FinOps-Multitool/Azure-FinOps-Multitool/src/FinOpsMultitool/FinOpsMultitool.csproj": {}
+  },
+  "projects": {
+    "/home/runner/work/Azure-FinOps-Multitool/Azure-FinOps-Multitool/src/FinOpsMultitool/FinOpsMultitool.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "/home/runner/work/Azure-FinOps-Multitool/Azure-FinOps-Multitool/src/FinOpsMultitool/FinOpsMultitool.csproj",
+        "projectName": "FinOpsMultitool",
+        "projectPath": "/home/runner/work/Azure-FinOps-Multitool/Azure-FinOps-Multitool/src/FinOpsMultitool/FinOpsMultitool.csproj",
+        "packagesPath": "/home/runner/.nuget/packages/",
+        "outputPath": "/home/runner/work/Azure-FinOps-Multitool/Azure-FinOps-Multitool/src/FinOpsMultitool/obj/",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "/home/runner/.nuget/NuGet/NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net8.0-windows"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net8.0-windows7.0": {
+            "targetAlias": "net8.0-windows",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "10.0.200"
+      },
+      "frameworks": {
+        "net8.0-windows7.0": {
+          "targetAlias": "net8.0-windows",
+          "dependencies": {
+            "Azure.Identity": {
+              "target": "Package",
+              "version": "[1.13.2, )"
+            },
+            "Azure.ResourceManager": {
+              "target": "Package",
+              "version": "[1.13.2, )"
+            },
+            "Azure.ResourceManager.CostManagement": {
+              "target": "Package",
+              "version": "[1.0.1, )"
+            },
+            "Azure.ResourceManager.ResourceGraph": {
+              "target": "Package",
+              "version": "[1.1.0, )"
+            },
+            "Azure.ResourceManager.Resources": {
+              "target": "Package",
+              "version": "[1.9.0, )"
+            },
+            "CsvHelper": {
+              "target": "Package",
+              "version": "[33.0.1, )"
+            },
+            "System.Text.Json": {
+              "target": "Package",
+              "version": "[9.0.5, )"
+            }
+          },
+          "imports": [
+            "net461",
+            "net462",
+            "net47",
+            "net471",
+            "net472",
+            "net48",
+            "net481"
+          ],
+          "assetTargetFallback": true,
+          "warn": true,
+          "downloadDependencies": [
+            {
+              "name": "Microsoft.WindowsDesktop.App.Ref",
+              "version": "[8.0.25, 8.0.25]"
+            }
+          ],
+          "frameworkReferences": {
+            "Microsoft.NETCore.App": {
+              "privateAssets": "all"
+            },
+            "Microsoft.WindowsDesktop.App.WPF": {
+              "privateAssets": "none"
+            }
+          },
+          "runtimeIdentifierGraphPath": "/usr/share/dotnet/sdk/10.0.201/PortableRuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}
