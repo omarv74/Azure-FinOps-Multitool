@@ -38,13 +38,13 @@ namespace FinOpsMultitool.Services
                     return BuildFallback(tenantId, subs);
 
                 var root = ParseManagementGroup(doc.RootElement);
-                var subMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                BuildSubMap(root, subMap);
+                var subscriptionManagementGroupMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                BuildSubMap(root, subscriptionManagementGroupMap);
 
                 return new HierarchyResult
                 {
                     RootGroup       = root,
-                    SubscriptionMap = subMap,
+                    SubscriptionMap = subscriptionManagementGroupMap,
                     FlatSubs        = new List<SubscriptionInfo>(subs)
                 };
             }

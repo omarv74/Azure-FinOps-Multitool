@@ -1759,7 +1759,7 @@ namespace FinOpsMultitool
             // Optimize pillar
             if (_scanData.Ahb?.TotalOpportunities > 0)
                 AddGuidanceItem(OptimizePanel, "🏷️",
-                    $"Azure Hybrid Benefit: {_scanData.Ahb.TotalOpportunities} opportunity/opportunities",
+                    $"Azure Hybrid Benefit: {_scanData.Ahb.TotalOpportunities} {(_scanData.Ahb.TotalOpportunities == 1 ? "opportunity" : "opportunities")}",
                     "Use existing Windows Server and SQL Server licenses to save 40-85%.", "#107C10");
             if (_scanData.OrphanedResources?.TotalCount > 0)
                 AddGuidanceItem(OptimizePanel, "🗑️",
